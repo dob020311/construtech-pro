@@ -1,0 +1,435 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Company {
+  id         String   @id @default(cuid())
+  name       String
+  cnpj       String   @unique
+  address    String?
+  phone      String?
+  email      String?
+  logo       String?
+  segments   String[]
+  users      User[]
+  licitacoes Licitacao[]
+  orcamentos Orcamento[]
+  documentos Document[]
+  contatos   Contact[]
+  orgaos     Organization[]
+  rpaJobs    RpaJob[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(ANALYST)
+  avatar       String?
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  activities   Activity[]
+  assignments  LicitacaoAssignment[]
+  notifications Notification[]
+  accounts     Account[]
+  sessions     Session[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  BUDGETEER
+  ANALYST
+}
+
+// NextAuth models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Licitacao {
+  id               String          @id @default(cuid())
+  number           String
+  modality         Modality
+  object           String
+  fullObject       String?
+  organ            String
+  organId          String?
+  organization     Organization?   @relation(fields: [organId], references: [id])
+  status           LicitacaoStatus @default(IDENTIFIED)
+  estimatedValue   Decimal?        @db.Decimal(15, 2)
+  proposedValue    Decimal?        @db.Decimal(15, 2)
+  openingDate      DateTime?
+  closingDate      DateTime?
+  deliveryDate     DateTime?
+  location         String?
+  state            String?
+  city             String?
+  segment          String?
+  judgmentCriteria String?
+  portalUrl        String?
+  editalUrl        String?
+  editalFileKey    String?
+  aiSummary        String?
+  aiScore          Float?
+  aiRequirements   Json?
+  aiDocuments      Json?
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id])
+  documents        LicitacaoDocument[]
+  orcamentos       Orcamento[]
+  assignments      LicitacaoAssignment[]
+  activities       Activity[]
+  pipeline         PipelineEntry?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([status, companyId])
+  @@index([closingDate])
+}
+
+enum LicitacaoStatus {
+  IDENTIFIED
+  ANALYZING
+  GO
+  NO_GO
+  BUDGETING
+  PROPOSAL_SENT
+  WON
+  LOST
+  CANCELED
+}
+
+enum Modality {
+  PREGAO_ELETRONICO
+  PREGAO_PRESENCIAL
+  CONCORRENCIA
+  TOMADA_PRECOS
+  CONVITE
+  CONCURSO
+  DIALOGO_COMPETITIVO
+  RDC
+}
+
+model LicitacaoAssignment {
+  id          String    @id @default(cuid())
+  licitacaoId String
+  licitacao   Licitacao @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  role        String?
+  assignedAt  DateTime  @default(now())
+
+  @@unique([licitacaoId, userId])
+}
+
+model Orcamento {
+  id            String          @id @default(cuid())
+  name          String
+  version       Int             @default(1)
+  status        OrcamentoStatus @default(DRAFT)
+  totalValue    Decimal         @default(0) @db.Decimal(15, 2)
+  bdiPercentage Decimal         @default(25) @db.Decimal(5, 2)
+  bdiConfig     Json?
+  totalWithBdi  Decimal         @default(0) @db.Decimal(15, 2)
+  licitacaoId   String?
+  licitacao     Licitacao?      @relation(fields: [licitacaoId], references: [id])
+  companyId     String
+  company       Company         @relation(fields: [companyId], references: [id])
+  chapters      OrcamentoChapter[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+enum OrcamentoStatus {
+  DRAFT
+  IN_PROGRESS
+  REVIEW
+  APPROVED
+  SUBMITTED
+}
+
+model OrcamentoChapter {
+  id          String         @id @default(cuid())
+  code        String
+  name        String
+  order       Int
+  orcamentoId String
+  orcamento   Orcamento      @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  items       OrcamentoItem[]
+}
+
+model OrcamentoItem {
+  id           String         @id @default(cuid())
+  code         String
+  description  String
+  unit         String
+  quantity     Decimal        @db.Decimal(15, 4)
+  unitPrice    Decimal        @db.Decimal(15, 4)
+  totalPrice   Decimal        @db.Decimal(15, 2)
+  source       String?
+  sourceCode   String?
+  order        Int
+  chapterId    String
+  chapter      OrcamentoChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  compositions Composition[]
+}
+
+model Composition {
+  id          String             @id @default(cuid())
+  code        String
+  description String
+  unit        String
+  unitCost    Decimal            @db.Decimal(15, 4)
+  source      String?
+  itemId      String?
+  item        OrcamentoItem?     @relation(fields: [itemId], references: [id])
+  inputs      CompositionInput[]
+}
+
+model CompositionInput {
+  id            String      @id @default(cuid())
+  type          InputType
+  code          String
+  description   String
+  unit          String
+  coefficient   Decimal     @db.Decimal(15, 6)
+  unitPrice     Decimal     @db.Decimal(15, 4)
+  totalPrice    Decimal     @db.Decimal(15, 4)
+  compositionId String
+  composition   Composition @relation(fields: [compositionId], references: [id], onDelete: Cascade)
+}
+
+enum InputType {
+  MATERIAL
+  LABOR
+  EQUIPMENT
+  OTHER
+}
+
+model Document {
+  id             String         @id @default(cuid())
+  name           String
+  type           DocumentType
+  category       String?
+  fileKey        String
+  fileSize       Int
+  mimeType       String
+  expirationDate DateTime?
+  status         DocumentStatus @default(VALID)
+  ocrContent     String?
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  licitacaoLinks LicitacaoDocument[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([expirationDate, status])
+}
+
+enum DocumentType {
+  CERTIDAO_NEGATIVA
+  ATESTADO_CAPACIDADE
+  BALANCO_PATRIMONIAL
+  CONTRATO_SOCIAL
+  PROCURACAO
+  ALVARA
+  REGISTRO_CREA
+  CERTIDAO_FGTS
+  CERTIDAO_INSS
+  CERTIDAO_TRABALHISTA
+  CERTIDAO_FEDERAL
+  CERTIDAO_ESTADUAL
+  CERTIDAO_MUNICIPAL
+  OUTROS
+}
+
+enum DocumentStatus {
+  VALID
+  EXPIRING
+  EXPIRED
+  PENDING
+}
+
+model LicitacaoDocument {
+  id           String        @id @default(cuid())
+  licitacaoId  String
+  licitacao    Licitacao     @relation(fields: [licitacaoId], references: [id])
+  documentId   String?
+  document     Document?     @relation(fields: [documentId], references: [id])
+  requiredName String
+  status       DocCheckStatus @default(PENDING)
+  order        Int            @default(0)
+  notes        String?
+}
+
+enum DocCheckStatus {
+  PENDING
+  UPLOADED
+  APPROVED
+  REJECTED
+  NOT_APPLICABLE
+}
+
+model Organization {
+  id         String      @id @default(cuid())
+  name       String
+  cnpj       String?
+  type       String?
+  state      String?
+  city       String?
+  portalUrl  String?
+  companyId  String
+  company    Company     @relation(fields: [companyId], references: [id])
+  contacts   Contact[]
+  licitacoes Licitacao[]
+}
+
+model Contact {
+  id             String        @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  role           String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  activities     Activity[]
+}
+
+model PipelineEntry {
+  id          String        @id @default(cuid())
+  stage       PipelineStage
+  value       Decimal?      @db.Decimal(15, 2)
+  probability Int?
+  licitacaoId String        @unique
+  licitacao   Licitacao     @relation(fields: [licitacaoId], references: [id])
+  updatedAt   DateTime      @updatedAt
+}
+
+enum PipelineStage {
+  PROSPECTING
+  ANALYSIS
+  DECISION
+  BUDGETING
+  PROPOSAL
+  RESULT
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  title       String
+  description String?
+  dueDate     DateTime?
+  completed   Boolean      @default(false)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id])
+  licitacaoId String?
+  licitacao   Licitacao?   @relation(fields: [licitacaoId], references: [id])
+  contactId   String?
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  createdAt   DateTime     @default(now())
+}
+
+enum ActivityType {
+  NOTE
+  TASK
+  CALL
+  EMAIL
+  MEETING
+  DEADLINE
+  STATUS_CHANGE
+  DOCUMENT_UPLOAD
+  SYSTEM
+}
+
+model RpaJob {
+  id            String      @id @default(cuid())
+  name          String
+  type          RpaJobType
+  config        Json
+  schedule      String?
+  lastRunAt     DateTime?
+  lastRunStatus String?
+  isActive      Boolean     @default(true)
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id])
+  logs          RpaLog[]
+  createdAt     DateTime    @default(now())
+}
+
+enum RpaJobType {
+  EDITAL_SEARCH
+  DOCUMENT_CHECK
+  PRICE_UPDATE
+}
+
+model RpaLog {
+  id         String   @id @default(cuid())
+  jobId      String
+  job        RpaJob   @relation(fields: [jobId], references: [id])
+  status     String
+  message    String?
+  details    Json?
+  itemsFound Int      @default(0)
+  duration   Int?
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  actionUrl String?
+  createdAt DateTime @default(now())
+}

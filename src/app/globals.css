@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 211 80% 28%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 211 80% 28%;
+    --radius: 0.5rem;
+
+    /* Custom colors */
+    --primary-50: 212 100% 95%;
+    --primary-100: 213 88% 88%;
+    --success: 160 84% 39%;
+    --warning: 38 92% 50%;
+    --info: 217 91% 60%;
+
+    /* Sidebar */
+    --sidebar-bg: 218 35% 8%;
+    --sidebar-border: 218 35% 14%;
+    --sidebar-text: 215 20% 65%;
+    --sidebar-text-active: 0 0% 100%;
+    --sidebar-hover: 218 35% 13%;
+    --sidebar-active: 211 80% 28%;
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 72px;
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 95%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 95%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 95%;
+    --primary: 211 80% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 47% 13%;
+    --secondary-foreground: 210 40% 95%;
+    --muted: 222 47% 13%;
+    --muted-foreground: 215 20% 60%;
+    --accent: 222 47% 15%;
+    --accent-foreground: 210 40% 95%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 47% 18%;
+    --input: 222 47% 18%;
+    --ring: 211 80% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+
+  /* Spreadsheet cell styles */
+  .spreadsheet-cell {
+    @apply border-r border-b border-border px-2 py-1 text-sm font-mono focus:outline-none focus:bg-blue-50 dark:focus:bg-blue-900/20;
+  }
+
+  /* Status badge variants */
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border;
+  }
+}
+
+/* Loading skeleton animation */
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 25%,
+    hsl(var(--accent)) 37%,
+    hsl(var(--muted)) 63%
+  );
+  background-size: 400px 100%;
+  animation: shimmer 1.4s ease infinite;
+}

@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# testing
+coverage/
+
+# next.js
+.next/
+out/
+
+# production
+build/
+dist/
+
+# env files — NEVER commit secrets
+.env
+.env.local
+.env.production
+.env.*.local
+
+# exceptions — example files are safe to commit
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma
+prisma/generated/
+
+# uploads (local dev only)
+public/uploads/
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
