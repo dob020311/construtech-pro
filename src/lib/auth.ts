@@ -68,6 +68,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.companyId = dbUser.companyId;
           token.role = dbUser.role;
           token.companyName = dbUser.company.name;
+        } else {
+          // User not found in DB (stale session from old database) — force re-login
+          return null;
         }
       }
       return token;

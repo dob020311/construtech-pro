@@ -115,36 +115,46 @@ export function ConfiguracoesContent() {
 
         {/* Content */}
         <div className="flex-1 bg-card border border-border rounded-xl p-6">
-          {activeTab === "perfil" && me && (
+          {activeTab === "perfil" && (
             <div className="space-y-5 max-w-md">
               <h2 className="font-heading font-semibold">Meu Perfil</h2>
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-2xl font-bold text-primary">
-                  {me.name.charAt(0)}
+              {!me ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-16 w-16 rounded-full bg-muted" />
+                  <div className="h-4 w-48 bg-muted rounded" />
+                  <div className="h-4 w-64 bg-muted rounded" />
                 </div>
-                <div>
-                  <p className="font-medium">{me.name}</p>
-                  <p className="text-sm text-muted-foreground">{me.email}</p>
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full mt-1 inline-block">
-                    {ROLE_LABELS[me.role] ?? me.role}
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">Nome</label>
-                <input type="text" defaultValue={me.name} onChange={e => setName(e.target.value)}
-                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1.5">E-mail</label>
-                <input type="email" defaultValue={me.email} disabled
-                  className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-sm opacity-60 cursor-not-allowed" />
-              </div>
-              <button onClick={() => { if (name) updateProfile.mutate({ name }); }}
-                disabled={updateProfile.isPending}
-                className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
-                {updateProfile.isPending ? "Salvando..." : "Salvar alterações"}
-              </button>
+              ) : (
+                <>
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center text-2xl font-bold text-primary">
+                      {me.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="font-medium">{me.name}</p>
+                      <p className="text-sm text-muted-foreground">{me.email}</p>
+                      <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full mt-1 inline-block">
+                        {ROLE_LABELS[me.role] ?? me.role}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">Nome</label>
+                    <input type="text" defaultValue={me.name} onChange={e => setName(e.target.value)}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5">E-mail</label>
+                    <input type="email" defaultValue={me.email} disabled
+                      className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-sm opacity-60 cursor-not-allowed" />
+                  </div>
+                  <button onClick={() => { if (name) updateProfile.mutate({ name }); }}
+                    disabled={updateProfile.isPending}
+                    className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
+                    {updateProfile.isPending ? "Salvando..." : "Salvar alterações"}
+                  </button>
+                </>
+              )}
             </div>
           )}
 
