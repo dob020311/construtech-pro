@@ -40,3 +40,5 @@ public/uploads/
 .DS_Store
 *.pem
 Thumbs.db
+
+.vercel

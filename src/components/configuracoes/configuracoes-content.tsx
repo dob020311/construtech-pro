@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { User, Building2, Bell, Shield, Palette } from "lucide-react";
+import { User, Building2, Bell, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 const TABS = [
@@ -13,6 +13,70 @@ const TABS = [
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
+
+function EmpresaTab() {
+  const { data: company } = trpc.user.getCompany.useQuery();
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState({ name: "", cnpj: "", address: "", phone: "", email: "", segments: "" });
+
+  useEffect(() => {
+    if (company) {
+      setForm({
+        name: company.name ?? "",
+        cnpj: company.cnpj ?? "",
+        address: company.address ?? "",
+        phone: company.phone ?? "",
+        email: company.email ?? "",
+        segments: company.segments?.join(", ") ?? "",
+      });
+    }
+  }, [company]);
+
+  const updateCompany = trpc.user.updateCompany.useMutation({
+    onSuccess: () => { utils.user.getCompany.invalidate(); toast.success("Empresa atualizada"); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const handleSave = () => {
+    updateCompany.mutate({
+      name: form.name,
+      cnpj: form.cnpj,
+      address: form.address,
+      phone: form.phone,
+      email: form.email,
+      segments: form.segments.split(",").map(s => s.trim()).filter(Boolean),
+    });
+  };
+
+  const field = (label: string, key: keyof typeof form, type = "text") => (
+    <div key={key}>
+      <label className="block text-sm font-medium mb-1.5">{label}</label>
+      <input type={type} value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-5 max-w-md">
+      <h2 className="font-heading font-semibold">Dados da Empresa</h2>
+      {field("Nome da Empresa", "name")}
+      {field("CNPJ", "cnpj")}
+      {field("Endereço", "address")}
+      {field("Telefone", "phone")}
+      {field("E-mail Corporativo", "email", "email")}
+      <div>
+        <label className="block text-sm font-medium mb-1.5">Segmentos (separados por vírgula)</label>
+        <input type="text" value={form.segments} onChange={e => setForm(f => ({ ...f, segments: e.target.value }))}
+          placeholder="Obras Civis, Pavimentação, Saneamento"
+          className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      </div>
+      <button onClick={handleSave} disabled={updateCompany.isPending}
+        className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
+        {updateCompany.isPending ? "Salvando..." : "Salvar alterações"}
+      </button>
+    </div>
+  );
+}
 
 export function ConfiguracoesContent() {
   const [activeTab, setActiveTab] = useState<TabId>("perfil");
@@ -84,14 +148,7 @@ export function ConfiguracoesContent() {
             </div>
           )}
 
-          {activeTab === "empresa" && (
-            <div className="space-y-4 max-w-md">
-              <h2 className="font-heading font-semibold">Dados da Empresa</h2>
-              <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground">
-                As configurações de empresa serão disponibilizadas em uma próxima versão.
-              </div>
-            </div>
-          )}
+          {activeTab === "empresa" && <EmpresaTab />}
 
           {activeTab === "notificacoes" && (
             <div className="space-y-4 max-w-md">

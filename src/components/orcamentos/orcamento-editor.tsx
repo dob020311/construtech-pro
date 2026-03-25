@@ -4,17 +4,29 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Settings, BarChart3,
-  Download, Loader2, X,
+  Download, Loader2, X, FileSpreadsheet, FileText, Sparkles, Send,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 interface OrcamentoEditorProps { id: string; }
+
+interface OrcItem { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; order: number; }
+interface OrcChapter { id: string; code: string; name: string; order: number; items: OrcItem[]; }
+interface OrcamentoData {
+  id: string; name: string; bdiPercentage: unknown; totalValue: unknown; totalWithBdi: unknown;
+  licitacao: { id: string; number: string; object: string; organ: string } | null;
+  chapters: OrcChapter[];
+}
 
 export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
   const [expandedChapters, setExpandedChapters] = useState<string[]>([]);
   const [showBdiModal, setShowBdiModal] = useState(false);
   const [showCurvaAbc, setShowCurvaAbc] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [showAddChapter, setShowAddChapter] = useState(false);
   const [addItemChapterId, setAddItemChapterId] = useState<string | null>(null);
   const utils = trpc.useUtils();
@@ -85,6 +97,9 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
       {showCurvaAbc && (
         <CurvaAbcModal items={curvaAbc ?? []} onClose={() => setShowCurvaAbc(false)} />
       )}
+      {showExport && orcamento && (
+        <ExportModal orcamento={orcamento} onClose={() => setShowExport(false)} />
+      )}
       {showAddChapter && (
         <AddChapterModal
           nextOrder={orcamento.chapters.length + 1}
@@ -115,9 +130,9 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => window.print()}
+          <button onClick={() => setShowExport(true)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-muted transition-colors">
-            <Download className="w-3.5 h-3.5" /> Exportar
+            <Download className="w-3.5 h-3.5" /> Exportar / IA
           </button>
           <button onClick={() => setShowBdiModal(true)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-muted transition-colors">
@@ -409,6 +424,173 @@ function AddChapterModal({ nextOrder, onSave, onClose, isPending }: {
               {isPending ? "Adicionando..." : "Adicionar"}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Export Modal ──────────────────────────────────────────────────────────────
+function ExportModal({ orcamento, onClose }: { orcamento: OrcamentoData; onClose: () => void }) {
+  const [tab, setTab] = useState<"export" | "ai">("export");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiResult, setAiResult] = useState("");
+
+  const aiReview = trpc.orcamento.aiReview.useMutation({
+    onSuccess: (data) => setAiResult(data.analysis),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const exportExcel = async () => {
+    const wb = XLSX.utils.book_new();
+    const rows: unknown[][] = [
+      ["ORÇAMENTO DE OBRA"],
+      [orcamento.name],
+      [orcamento.licitacao ? `Licitação: ${orcamento.licitacao.number} — ${orcamento.licitacao.organ}` : ""],
+      [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+      [],
+      ["Código", "Descrição", "Und", "Quantidade", "Preço Unitário (R$)", "Total (R$)"],
+    ];
+
+    orcamento.chapters.forEach((ch) => {
+      rows.push([ch.code, ch.name.toUpperCase(), "", "", "", ch.items.reduce((s, i) => s + Number(i.totalPrice), 0)]);
+      ch.items.forEach((item) => {
+        rows.push([item.code, item.description, item.unit, Number(item.quantity), Number(item.unitPrice), Number(item.totalPrice)]);
+      });
+    });
+
+    rows.push([]);
+    rows.push(["", "SUBTOTAL SEM BDI", "", "", "", Number(orcamento.totalValue)]);
+    rows.push(["", `BDI (${Number(orcamento.bdiPercentage).toFixed(2)}%)`, "", "", "", Number(orcamento.totalWithBdi) - Number(orcamento.totalValue)]);
+    rows.push(["", "TOTAL GERAL COM BDI", "", "", "", Number(orcamento.totalWithBdi)]);
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 14 }, { wch: 50 }, { wch: 8 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Orçamento");
+    XLSX.writeFile(wb, `${orcamento.name.replace(/\s+/g, "_")}.xlsx`);
+    toast.success("Excel gerado com sucesso!");
+  };
+
+  const exportPdf = async () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("ORÇAMENTO DE OBRA", pageW / 2, 15, { align: "center" });
+    doc.setFontSize(11);
+    doc.text(orcamento.name, pageW / 2, 22, { align: "center" });
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    if (orcamento.licitacao) doc.text(`Licitação: ${orcamento.licitacao.number} — ${orcamento.licitacao.organ}`, pageW / 2, 28, { align: "center" });
+    doc.text(`Data: ${new Date().toLocaleDateString("pt-BR")}   |   BDI: ${Number(orcamento.bdiPercentage).toFixed(2)}%`, pageW / 2, 33, { align: "center" });
+
+    const bodyRows: unknown[][] = [];
+    orcamento.chapters.forEach((ch) => {
+      const chTotal = ch.items.reduce((s, i) => s + Number(i.totalPrice), 0);
+      bodyRows.push([{ content: `${ch.code}  ${ch.name}`, colSpan: 5, styles: { fontStyle: "bold", fillColor: [230, 235, 245] } },
+        { content: formatCurrency(chTotal), styles: { fontStyle: "bold", fillColor: [230, 235, 245], halign: "right" } }]);
+      ch.items.forEach((item) => {
+        bodyRows.push([item.code, item.description, item.unit,
+          Number(item.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 3 }),
+          formatCurrency(Number(item.unitPrice)),
+          formatCurrency(Number(item.totalPrice))]);
+      });
+    });
+
+    autoTable(doc, {
+      startY: 38,
+      head: [["Código", "Descrição", "Und", "Qtd", "Preço Unit.", "Total"]],
+      body: bodyRows as never,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [30, 64, 120], textColor: 255 },
+      columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 100 }, 2: { cellWidth: 14, halign: "center" }, 3: { cellWidth: 20, halign: "right" }, 4: { cellWidth: 32, halign: "right" }, 5: { cellWidth: 32, halign: "right" } },
+      foot: [
+        ["", "Subtotal sem BDI", "", "", "", formatCurrency(Number(orcamento.totalValue))],
+        ["", `BDI (${Number(orcamento.bdiPercentage).toFixed(2)}%)`, "", "", "", formatCurrency(Number(orcamento.totalWithBdi) - Number(orcamento.totalValue))],
+        ["", "TOTAL GERAL COM BDI", "", "", "", formatCurrency(Number(orcamento.totalWithBdi))],
+      ],
+      footStyles: { fontStyle: "bold", fillColor: [240, 245, 255] },
+    });
+
+    doc.save(`${orcamento.name.replace(/\s+/g, "_")}.pdf`);
+    toast.success("PDF gerado com sucesso!");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[85vh]">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="text-lg font-heading font-bold">Exportar / Revisar com IA</h2>
+          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+
+        <div className="flex border-b border-border">
+          {([["export", "Exportar"], ["ai", "Revisar com IA"]] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={cn("px-5 py-2.5 text-sm font-medium transition-colors", tab === id ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-5 flex-1 overflow-auto">
+          {tab === "export" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">Escolha o formato para exportar <strong>{orcamento.name}</strong>:</p>
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={exportExcel}
+                  className="flex flex-col items-center gap-3 p-6 border-2 border-border rounded-xl hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-950/20 transition-all group">
+                  <FileSpreadsheet className="w-10 h-10 text-green-600" />
+                  <div className="text-center">
+                    <p className="font-semibold">Planilha Excel</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Formato .xlsx editável</p>
+                  </div>
+                </button>
+                <button onClick={exportPdf}
+                  className="flex flex-col items-center gap-3 p-6 border-2 border-border rounded-xl hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all group">
+                  <FileText className="w-10 h-10 text-red-600" />
+                  <div className="text-center">
+                    <p className="font-semibold">PDF</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Pronto para impressão</p>
+                  </div>
+                </button>
+              </div>
+              <div className="bg-muted/40 rounded-lg p-3 text-xs text-muted-foreground">
+                <strong>Resumo:</strong> {orcamento.chapters.length} capítulos · {orcamento.chapters.reduce((s, c) => s + c.items.length, 0)} itens · BDI {Number(orcamento.bdiPercentage).toFixed(1)}% · Total: {formatCurrency(Number(orcamento.totalWithBdi))}
+              </div>
+            </div>
+          )}
+
+          {tab === "ai" && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 bg-primary/5 border border-primary/20 rounded-lg p-3">
+                <Sparkles className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground">A IA analisa seu orçamento e sugere melhorias: itens faltando, preços atípicos, otimizações de BDI e conformidade com SINAPI/Lei 14.133.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Instrução para a IA (opcional)</label>
+                <textarea value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} rows={3}
+                  placeholder="Ex: Verifique se os preços estão compatíveis com SINAPI SP Jan/2026. Identifique serviços faltantes para pavimentação urbana."
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+              </div>
+              <button onClick={() => aiReview.mutate({ id: orcamento.id, prompt: aiPrompt })}
+                disabled={aiReview.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
+                {aiReview.isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Analisando...</> : <><Send className="w-4 h-4" /> Analisar com IA</>}
+              </button>
+              {aiResult && (
+                <div className="bg-muted/30 border border-border rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-semibold">Análise da IA</span>
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{aiResult}</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

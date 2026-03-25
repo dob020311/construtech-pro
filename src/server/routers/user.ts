@@ -101,4 +101,35 @@ export const userRouter = createTRPCRouter({
       });
       return { success: true };
     }),
+
+  getCompany: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.prisma.company.findUnique({
+      where: { id: ctx.session.user.companyId },
+    });
+  }),
+
+  updateCompany: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(2),
+        cnpj: z.string().optional(),
+        address: z.string().optional(),
+        phone: z.string().optional(),
+        email: z.string().email().optional().or(z.literal("")),
+        segments: z.array(z.string()).optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.prisma.company.update({
+        where: { id: ctx.session.user.companyId },
+        data: {
+          name: input.name,
+          cnpj: input.cnpj,
+          address: input.address,
+          phone: input.phone,
+          email: input.email || null,
+          segments: input.segments,
+        },
+      });
+    }),
 });

@@ -1,6 +1,5 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { z } from "zod";
@@ -12,8 +11,6 @@ const loginSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adapter: PrismaAdapter(prisma) as any,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -48,7 +45,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           role: user.role,
           companyId: user.companyId,
-          companyName: user.company.name,
+          companyName: user.company?.name ?? "",
           avatar: user.avatar,
         };
       },
@@ -62,6 +59,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.companyId = (user as { companyId: string }).companyId;
         token.companyName = (user as { companyName: string }).companyName;
         token.avatar = (user as { avatar: string | null }).avatar;
+      } else if (token.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: { companyId: true, role: true, company: { select: { name: true } } },
+        });
+        if (dbUser) {
+          token.companyId = dbUser.companyId;
+          token.role = dbUser.role;
+          token.companyName = dbUser.company.name;
+        }
       }
       return token;
     },

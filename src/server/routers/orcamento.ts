@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { OrcamentoStatus } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 import Decimal from "decimal.js";
+import Anthropic from "@anthropic-ai/sdk";
 
 export const orcamentoRouter = createTRPCRouter({
   list: protectedProcedure
@@ -259,6 +260,60 @@ export const orcamentoRouter = createTRPCRouter({
         const classe = percentualAcumulado <= 70 ? "A" : percentualAcumulado <= 90 ? "B" : "C";
         return { ...item, percentual, percentualAcumulado, classe };
       });
+    }),
+
+  aiReview: protectedProcedure
+    .input(z.object({ id: z.string(), prompt: z.string().max(500).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const orcamento = await ctx.prisma.orcamento.findFirst({
+        where: { id: input.id, companyId: ctx.session.user.companyId },
+        include: { chapters: { include: { items: true } }, licitacao: true },
+      });
+      if (!orcamento) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey || apiKey.includes("placeholder")) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Chave da API Anthropic não configurada. Adicione ANTHROPIC_API_KEY nas variáveis de ambiente." });
+      }
+
+      const client = new Anthropic({ apiKey });
+
+      const resumo = orcamento.chapters.map(ch => ({
+        capitulo: `${ch.code} - ${ch.name}`,
+        itens: ch.items.map(i => ({
+          codigo: i.code, descricao: i.description, und: i.unit,
+          qtd: Number(i.quantity), precoUnit: Number(i.unitPrice), total: Number(i.totalPrice),
+        })),
+        totalCapitulo: ch.items.reduce((s, i) => s + Number(i.totalPrice), 0),
+      }));
+
+      const userPrompt = input.prompt?.trim()
+        ? input.prompt
+        : "Analise este orçamento de obra e forneça: 1) Itens possivelmente faltando, 2) Itens com preços atípicos, 3) Sugestões de otimização de BDI, 4) Observações gerais. Seja objetivo e prático.";
+
+      const message = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 2048,
+        messages: [{
+          role: "user",
+          content: `Você é especialista em orçamentos de obras públicas no Brasil (SINAPI, SICRO, Lei 14.133/2021).
+
+Orçamento: ${orcamento.name}
+${orcamento.licitacao ? `Licitação: ${orcamento.licitacao.number} - ${orcamento.licitacao.organ}` : ""}
+BDI: ${Number(orcamento.bdiPercentage).toFixed(2)}%
+Total sem BDI: R$ ${Number(orcamento.totalValue).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+Total com BDI: R$ ${Number(orcamento.totalWithBdi).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+
+Itens:
+${JSON.stringify(resumo, null, 2)}
+
+${userPrompt}`,
+        }],
+      });
+
+      const content = message.content[0];
+      if (content.type !== "text") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      return { analysis: content.text };
     }),
 });
 
