@@ -6,6 +6,7 @@ import { User, Building2, Bell, Shield, Mail, AlertTriangle, CheckCircle2, Credi
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { PLANS, formatPrice, type PlanKey } from "@/lib/stripe";
+import { useSession } from "next-auth/react";
 
 const TABS = [
   { id: "perfil", label: "Meu Perfil", icon: User },
@@ -466,6 +467,7 @@ function UsuariosTab({ meId }: { meId: string }) {
 export function ConfiguracoesContent() {
   const [activeTab, setActiveTab] = useState<TabId>("perfil");
   const { data: me } = trpc.user.me.useQuery();
+  const { update: updateSession } = useSession();
 
   const [name, setName] = useState("");
   const utils = trpc.useUtils();
@@ -475,7 +477,11 @@ export function ConfiguracoesContent() {
   }, [me?.name]);
 
   const updateProfile = trpc.user.updateProfile.useMutation({
-    onSuccess: () => { utils.user.me.invalidate(); toast.success("Perfil atualizado"); },
+    onSuccess: async (data) => {
+      utils.user.me.invalidate();
+      await updateSession({ name: data.name });
+      toast.success("Perfil atualizado");
+    },
     onError: (err) => toast.error(err.message),
   });
 
