@@ -65,6 +65,7 @@ function getFallbackEditais(keyword: string, uf: string): EditalFound[] {
   return templates.slice(0, 3).map(e => ({
     ...e,
     title: `[Demo] ${e.title}`,
+    portalUrl: null, // demo items have no real URL
     uf: uf || e.uf,
     keyword,
   }));
