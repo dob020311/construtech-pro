@@ -12,23 +12,36 @@ datasource db {
 }
 
 model Company {
-  id         String   @id @default(cuid())
-  name       String
-  cnpj       String   @unique
-  address    String?
-  phone      String?
-  email      String?
-  logo       String?
-  segments   String[]
-  users      User[]
-  licitacoes Licitacao[]
-  orcamentos Orcamento[]
-  documentos Document[]
-  contatos   Contact[]
-  orgaos     Organization[]
-  rpaJobs    RpaJob[]
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                   String    @id @default(cuid())
+  name                 String
+  cnpj                 String    @unique
+  address              String?
+  phone                String?
+  email                String?
+  logo                 String?
+  segments             String[]
+  // Stripe billing
+  stripeCustomerId     String?   @unique
+  stripePriceId        String?
+  stripeSubscriptionId String?
+  plan                 Plan      @default(FREE)
+  planExpiresAt        DateTime?
+  users                User[]
+  licitacoes           Licitacao[]
+  orcamentos           Orcamento[]
+  documentos           Document[]
+  contatos             Contact[]
+  orgaos               Organization[]
+  rpaJobs              RpaJob[]
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
 }
 
 model User {

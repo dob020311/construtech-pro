@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { User, Building2, Bell, Shield, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { User, Building2, Bell, Shield, Mail, AlertTriangle, CheckCircle2, CreditCard, Zap, Crown, Star } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { PLANS, formatPrice, type PlanKey } from "@/lib/stripe";
 
 const TABS = [
   { id: "perfil", label: "Meu Perfil", icon: User },
   { id: "empresa", label: "Empresa", icon: Building2 },
   { id: "notificacoes", label: "Notificações", icon: Bell },
+  { id: "billing", label: "Plano & Billing", icon: CreditCard },
   { id: "usuarios", label: "Usuários", icon: Shield },
 ] as const;
 
@@ -75,6 +77,129 @@ function EmpresaTab() {
         className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
         {updateCompany.isPending ? "Salvando..." : "Salvar alterações"}
       </button>
+    </div>
+  );
+}
+
+const PLAN_ICONS: Record<string, React.ElementType> = {
+  FREE: Zap, STARTER: Star, PRO: Crown, ENTERPRISE: Shield,
+};
+const PLAN_COLORS: Record<string, string> = {
+  FREE: "text-muted-foreground", STARTER: "text-blue-600", PRO: "text-purple-600", ENTERPRISE: "text-amber-600",
+};
+const PLAN_BG: Record<string, string> = {
+  FREE: "bg-muted", STARTER: "bg-blue-50 dark:bg-blue-900/20", PRO: "bg-purple-50 dark:bg-purple-900/20", ENTERPRISE: "bg-amber-50 dark:bg-amber-900/20",
+};
+
+function BillingTab({ currentPlan }: { currentPlan?: string }) {
+  const [loading, setLoading] = useState<PlanKey | null>(null);
+  const active = (currentPlan ?? "FREE") as PlanKey;
+
+  const handleUpgrade = async (planKey: PlanKey) => {
+    const plan = PLANS[planKey];
+    if (!plan.priceId) {
+      if (planKey === "ENTERPRISE") {
+        toast.info("Entre em contato: contato@construtech.pro");
+      } else {
+        toast.error("Plano não configurado. Configure STRIPE_PRICE_ID nas variáveis de ambiente.");
+      }
+      return;
+    }
+    setLoading(planKey);
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planKey }),
+      });
+      const data = await res.json() as { url?: string; error?: string };
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        toast.error(data.error ?? "Erro ao iniciar checkout");
+      }
+    } catch {
+      toast.error("Erro ao conectar com o servidor");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="font-heading font-semibold">Plano & Billing</h2>
+        <p className="text-xs text-muted-foreground mt-1">Gerencie sua assinatura e recursos disponíveis.</p>
+      </div>
+
+      {/* Current plan badge */}
+      <div className={cn("flex items-center gap-3 p-4 rounded-xl border", PLAN_BG[active])}>
+        {(() => { const Icon = PLAN_ICONS[active] ?? Zap; return <Icon className={cn("w-5 h-5", PLAN_COLORS[active])} />; })()}
+        <div>
+          <p className="text-sm font-semibold text-foreground">
+            Plano atual: <span className={PLAN_COLORS[active]}>{PLANS[active].name}</span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {PLANS[active].price === 0 ? "Grátis para sempre" : formatPrice(PLANS[active].price) + "/mês"}
+          </p>
+        </div>
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {(Object.entries(PLANS) as [PlanKey, typeof PLANS[PlanKey]][]).filter(([k]) => k !== "FREE").map(([key, plan]) => {
+          const isCurrent = active === key;
+          const Icon = PLAN_ICONS[key] ?? Zap;
+          return (
+            <div key={key} className={cn(
+              "rounded-xl border p-5 flex flex-col gap-4 transition-all",
+              isCurrent ? "border-primary ring-2 ring-primary/20 bg-primary/5" : "border-border bg-card hover:border-primary/50"
+            )}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={cn("p-2 rounded-lg", PLAN_BG[key])}>
+                    <Icon className={cn("w-4 h-4", PLAN_COLORS[key])} />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm">{plan.name}</p>
+                    <p className={cn("text-xs font-medium", PLAN_COLORS[key])}>
+                      {formatPrice(plan.price)}{plan.price > 0 ? "/mês" : ""}
+                    </p>
+                  </div>
+                </div>
+                {isCurrent && (
+                  <span className="text-[10px] font-semibold bg-primary text-white px-2 py-0.5 rounded-full">Ativo</span>
+                )}
+              </div>
+
+              <ul className="space-y-1.5 flex-1">
+                {plan.features.map(f => (
+                  <li key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+
+              <button
+                onClick={() => handleUpgrade(key)}
+                disabled={isCurrent || loading !== null}
+                className={cn(
+                  "w-full py-2 rounded-lg text-sm font-medium transition-colors",
+                  isCurrent
+                    ? "bg-primary/10 text-primary cursor-default"
+                    : "bg-primary text-white hover:bg-primary/90 disabled:opacity-50"
+                )}>
+                {loading === key ? "Aguarde..." : isCurrent ? "Plano Atual" : key === "ENTERPRISE" ? "Falar com vendas" : `Assinar ${plan.name}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Pagamentos processados com segurança via Stripe. Cancele a qualquer momento sem multa.
+      </p>
     </div>
   );
 }
@@ -262,6 +387,10 @@ export function ConfiguracoesContent() {
 
           {activeTab === "notificacoes" && (
             <NotificacoesTab me={me} />
+          )}
+
+          {activeTab === "billing" && (
+            <BillingTab currentPlan={me?.company?.plan} />
           )}
 
           {activeTab === "usuarios" && (

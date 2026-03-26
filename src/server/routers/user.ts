@@ -17,7 +17,7 @@ export const userRouter = createTRPCRouter({
         emailNotifications: true,
         companyId: true,
         company: {
-          select: { id: true, name: true, cnpj: true, logo: true, segments: true },
+          select: { id: true, name: true, cnpj: true, logo: true, segments: true, plan: true },
         },
         createdAt: true,
       },
