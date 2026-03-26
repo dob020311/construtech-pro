@@ -65,6 +65,20 @@ export const userRouter = createTRPCRouter({
       });
     }),
 
+  deleteUser: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (input.userId === ctx.session.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Você não pode excluir sua própria conta" });
+      }
+      const target = await ctx.prisma.user.findFirst({
+        where: { id: input.userId, companyId: ctx.session.user.companyId },
+      });
+      if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+      await ctx.prisma.user.delete({ where: { id: input.userId } });
+      return { success: true };
+    }),
+
   updateProfile: protectedProcedure
     .input(
       z.object({

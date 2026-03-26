@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { User, Building2, Bell, Shield, Mail, AlertTriangle, CheckCircle2, CreditCard, Zap, Crown, Star } from "lucide-react";
+import { User, Building2, Bell, Shield, Mail, AlertTriangle, CheckCircle2, CreditCard, Zap, Crown, Star, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { PLANS, formatPrice, type PlanKey } from "@/lib/stripe";
@@ -303,10 +303,169 @@ function NotificacoesTab({ me }: { me: { emailNotifications: boolean } | null | 
   );
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: "Administrador", MANAGER: "Gerente", BUDGETEER: "Orçamentista", ANALYST: "Analista",
+};
+
+function NovoUsuarioModal({ onClose }: { onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "ANALYST" as "ADMIN" | "MANAGER" | "BUDGETEER" | "ANALYST" });
+  const [error, setError] = useState("");
+
+  const create = trpc.user.createUser.useMutation({
+    onSuccess: () => { utils.user.listUsers.invalidate(); onClose(); toast.success("Usuário criado com sucesso"); },
+    onError: (err) => setError(err.message),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.name.trim()) { setError("Nome é obrigatório"); return; }
+    if (!form.email.trim()) { setError("E-mail é obrigatório"); return; }
+    if (form.password.length < 6) { setError("Senha deve ter pelo menos 6 caracteres"); return; }
+    create.mutate(form);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-heading font-bold">Novo Usuário</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Nome *</label>
+            <input autoFocus type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="Nome completo"
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">E-mail *</label>
+            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="usuario@empresa.com"
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Senha inicial *</label>
+            <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              placeholder="Mínimo 6 caracteres"
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Perfil *</label>
+            <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as typeof form.role }))}
+              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30">
+              <option value="ANALYST">Analista</option>
+              <option value="BUDGETEER">Orçamentista</option>
+              <option value="MANAGER">Gerente</option>
+              <option value="ADMIN">Administrador</option>
+            </select>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+              Cancelar
+            </button>
+            <button type="submit" disabled={create.isPending}
+              className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {create.isPending ? "Criando..." : "Criar Usuário"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function UsuariosTab({ meId }: { meId: string }) {
+  const utils = trpc.useUtils();
+  const { data: users, isLoading } = trpc.user.listUsers.useQuery();
+  const [showModal, setShowModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const deleteUser = trpc.user.deleteUser.useMutation({
+    onSuccess: () => { utils.user.listUsers.invalidate(); setConfirmDelete(null); toast.success("Usuário removido"); },
+    onError: (err) => { toast.error(err.message); setConfirmDelete(null); },
+  });
+
+  return (
+    <div className="space-y-4">
+      {showModal && <NovoUsuarioModal onClose={() => setShowModal(false)} />}
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-heading font-semibold">Usuários do Sistema</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{users?.length ?? 0} usuários cadastrados</p>
+        </div>
+        <button onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+          <Plus className="w-4 h-4" /> Novo Usuário
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1,2,3].map(i => <div key={i} className="skeleton h-14 rounded-xl" />)}
+        </div>
+      ) : (
+        <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+          {users?.map((u) => {
+            const isSelf = u.id === meId;
+            return (
+              <div key={u.id} className="flex items-center justify-between px-4 py-3 bg-card hover:bg-muted/20 transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm flex-shrink-0">
+                    {u.name.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{u.name}</p>
+                      {isSelf && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">Você</span>}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{u.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
+                    {ROLE_LABELS[u.role] ?? u.role}
+                  </span>
+                  {!isSelf && (
+                    confirmDelete === u.id ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-destructive">Confirmar?</span>
+                        <button onClick={() => deleteUser.mutate({ userId: u.id })} disabled={deleteUser.isPending}
+                          className="text-xs px-2 py-1 bg-destructive text-white rounded-lg hover:bg-destructive/90 disabled:opacity-50">
+                          {deleteUser.isPending ? "..." : "Sim"}
+                        </button>
+                        <button onClick={() => setConfirmDelete(null)}
+                          className="text-xs px-2 py-1 border border-border rounded-lg hover:bg-muted">
+                          Não
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setConfirmDelete(u.id)}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ConfiguracoesContent() {
   const [activeTab, setActiveTab] = useState<TabId>("perfil");
   const { data: me } = trpc.user.me.useQuery();
-  const { data: users } = trpc.user.listUsers.useQuery();
 
   const [name, setName] = useState("");
   const utils = trpc.useUtils();
@@ -315,10 +474,6 @@ export function ConfiguracoesContent() {
     onSuccess: () => { utils.user.me.invalidate(); toast.success("Perfil atualizado"); },
     onError: (err) => toast.error(err.message),
   });
-
-  const ROLE_LABELS: Record<string, string> = {
-    ADMIN: "Administrador", MANAGER: "Gerente", BUDGETEER: "Orçamentista", ANALYST: "Analista",
-  };
 
   return (
     <div className="space-y-5">
@@ -385,37 +540,11 @@ export function ConfiguracoesContent() {
 
           {activeTab === "empresa" && <EmpresaTab />}
 
-          {activeTab === "notificacoes" && (
-            <NotificacoesTab me={me} />
-          )}
+          {activeTab === "notificacoes" && <NotificacoesTab me={me} />}
 
-          {activeTab === "billing" && (
-            <BillingTab currentPlan={me?.company?.plan} />
-          )}
+          {activeTab === "billing" && <BillingTab currentPlan={me?.company?.plan} />}
 
-          {activeTab === "usuarios" && (
-            <div className="space-y-4">
-              <h2 className="font-heading font-semibold">Usuários do Sistema</h2>
-              <div className="divide-y divide-border">
-                {users?.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
-                        {u.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">{u.name}</p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
-                      </div>
-                    </div>
-                    <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
-                      {ROLE_LABELS[u.role] ?? u.role}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {activeTab === "usuarios" && <UsuariosTab meId={me?.id ?? ""} />}
         </div>
       </div>
     </div>
