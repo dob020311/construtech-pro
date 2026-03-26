@@ -2,18 +2,25 @@
 
 import { trpc } from "@/lib/trpc";
 import {
-  Bot, Clock, CheckCircle2, XCircle, AlertTriangle, Play, RefreshCw,
+  Bot, Clock, CheckCircle2, XCircle, Play, RefreshCw,
   Plus, Trash2, Settings, X, Loader2, FileSearch, ShieldCheck, DollarSign,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, ExternalLink, Building2,
 } from "lucide-react";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, formatCurrency } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
+
+const PORTAL_OPTIONS = [
+  { id: "PNCP", label: "PNCP", desc: "Portal Nacional de Contratações Públicas", available: true },
+  { id: "ComprasGov", label: "ComprasGov", desc: "Governo Federal (SIASG/UASG)", available: true },
+  { id: "BLL", label: "BLL Compras", desc: "Bolsa de Licitações e Leilões", available: false },
+  { id: "BB", label: "Portal BB", desc: "Banco do Brasil — Licitações-e", available: false },
+];
 
 const JOB_TYPE_META = {
   EDITAL_SEARCH: {
     label: "Busca de Editais",
-    desc: "Pesquisa novos editais no PNCP e portais de licitações conforme palavras-chave.",
+    desc: "Pesquisa novos editais no PNCP, ComprasGov e outros portais conforme palavras-chave.",
     icon: FileSearch,
     color: "text-blue-600",
     bg: "bg-blue-50 dark:bg-blue-950/30",
@@ -36,6 +43,110 @@ const JOB_TYPE_META = {
 
 type JobType = keyof typeof JOB_TYPE_META;
 
+interface EditalFound {
+  title: string;
+  organ: string;
+  number: string;
+  modality: string;
+  portal: string;
+  portalUrl: string | null;
+  date: string;
+  value: number | null;
+  uf: string;
+  city: string;
+  keyword: string;
+}
+
+/* ── Edital Result Card ── */
+function EditalCard({ edital }: { edital: EditalFound }) {
+  const portalColor: Record<string, string> = {
+    PNCP: "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300",
+    ComprasGov: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
+  };
+  return (
+    <div className="border border-border rounded-lg p-3 bg-background hover:shadow-sm transition-shadow space-y-2">
+      <div className="flex items-start gap-2">
+        <Building2 className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-medium text-foreground line-clamp-2 leading-snug">{edital.title}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{edital.organ}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded-full", portalColor[edital.portal] ?? "bg-muted text-muted-foreground")}>
+          {edital.portal}
+        </span>
+        <span className="text-[10px] text-muted-foreground">{edital.modality}</span>
+        {edital.city && <span className="text-[10px] text-muted-foreground">{edital.city}/{edital.uf}</span>}
+        {edital.value && (
+          <span className="text-[10px] font-medium text-primary ml-auto">{formatCurrency(edital.value)}</span>
+        )}
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">
+          Publicado: {new Date(edital.date).toLocaleDateString("pt-BR")}
+          {edital.number && ` · ${edital.number}`}
+        </span>
+        {edital.portalUrl && (
+          <a href={edital.portalUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] text-primary hover:underline">
+            Ver edital <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Log Panel with edital results ── */
+function LogPanel({ jobId, jobType }: { jobId: string; jobType: string }) {
+  const { data: logs } = trpc.rpa.getLogs.useQuery({ jobId, limit: 10 });
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
+
+  if (!logs?.length) return <p className="text-xs text-muted-foreground py-2">Nenhuma execução registrada.</p>;
+
+  return (
+    <div className="mt-3 space-y-2">
+      {logs.map(log => {
+        const details = log.details as { editais?: EditalFound[]; documents?: unknown[] } | null;
+        const editais = details?.editais ?? [];
+        const isExpanded = expandedLog === log.id;
+
+        return (
+          <div key={log.id} className="border border-border rounded-lg overflow-hidden">
+            <div className="flex items-start gap-2 text-xs p-2.5 bg-muted/30">
+              {log.status === "SUCCESS"
+                ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
+                : <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />}
+              <div className="flex-1 min-w-0">
+                <span className="text-foreground">{log.message ?? log.status}</span>
+                {log.itemsFound > 0 && <span className="ml-1 font-medium text-primary">({log.itemsFound} {jobType === "EDITAL_SEARCH" ? "editais" : "itens"})</span>}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-muted-foreground whitespace-nowrap">
+                  {new Date(log.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </span>
+                {editais.length > 0 && (
+                  <button onClick={() => setExpandedLog(isExpanded ? null : log.id)}
+                    className="flex items-center gap-0.5 text-primary hover:underline">
+                    {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+              </div>
+            </div>
+            {isExpanded && editais.length > 0 && (
+              <div className="p-2.5 space-y-2 border-t border-border">
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{editais.length} Edital(is) Encontrado(s)</p>
+                {editais.map((e, i) => <EditalCard key={i} edital={e} />)}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Create/Edit Modal ── */
 function JobModal({
   initial,
@@ -52,6 +163,9 @@ function JobModal({
     ((initial?.config?.keywords as string[] | undefined) ?? []).join(", ")
   );
   const [uf, setUf] = useState((initial?.config?.uf as string | undefined) ?? "BA");
+  const [portals, setPortals] = useState<string[]>(
+    (initial?.config?.portals as string[] | undefined) ?? ["PNCP", "ComprasGov"]
+  );
 
   const createJob = trpc.rpa.createJob.useMutation({
     onSuccess: () => { utils.rpa.listJobs.invalidate(); toast.success("Agente criado"); onClose(); },
@@ -62,10 +176,14 @@ function JobModal({
     onError: (e) => toast.error(e.message),
   });
 
+  const togglePortal = (id: string) =>
+    setPortals(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+
   const save = () => {
     const config = {
       keywords: keywords.split(",").map(k => k.trim()).filter(Boolean),
       uf,
+      portals,
     };
     if (initial) {
       updateJob.mutate({ id: initial.id, name, schedule, config });
@@ -75,12 +193,13 @@ function JobModal({
   };
 
   const isPending = createJob.isPending || updateJob.isPending;
+  const currentType = initial?.type ?? type;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between p-5 border-b border-border">
+      <div className="relative bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-background z-10">
           <h2 className="font-heading font-semibold text-sm">{initial ? "Editar Agente" : "Novo Agente"}</h2>
           <button onClick={onClose}><X className="w-4 h-4 text-muted-foreground" /></button>
         </div>
@@ -91,6 +210,7 @@ function JobModal({
               placeholder="ex: Busca Pavimentação BA"
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
+
           {!initial && (
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Tipo de Agente</label>
@@ -102,7 +222,8 @@ function JobModal({
               </select>
             </div>
           )}
-          {(type === "EDITAL_SEARCH" || initial?.type === "EDITAL_SEARCH") && (
+
+          {currentType === "EDITAL_SEARCH" && (
             <>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Palavras-chave (separadas por vírgula)</label>
@@ -114,19 +235,47 @@ function JobModal({
                 <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Estado (UF)</label>
                 <input value={uf} onChange={e => setUf(e.target.value.toUpperCase().slice(0, 2))}
                   placeholder="BA"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                  className="w-32 px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">Portais de Busca</label>
+                <div className="space-y-2">
+                  {PORTAL_OPTIONS.map(p => (
+                    <label key={p.id} className={cn("flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                      portals.includes(p.id) ? "border-primary bg-primary/5" : "border-border hover:bg-muted",
+                      !p.available && "opacity-60 cursor-not-allowed"
+                    )}>
+                      <input type="checkbox" checked={portals.includes(p.id)}
+                        onChange={() => p.available && togglePortal(p.id)}
+                        disabled={!p.available}
+                        className="mt-0.5 accent-primary" />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{p.label}</span>
+                          {!p.available && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">Em breve</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{p.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
               </div>
             </>
           )}
+
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Agendamento (cron)</label>
             <input value={schedule} onChange={e => setSchedule(e.target.value)}
-              placeholder="0 6 * * * (todo dia às 6h)"
+              placeholder="0 6 * * *"
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            <p className="text-[11px] text-muted-foreground mt-1">Ex: <code>0 6 * * *</code> = 6h diário · <code>0 8 * * 1</code> = segunda às 8h</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              <code>0 6 * * *</code> = 6h diário · <code>0 8 * * 1</code> = segunda às 8h
+            </p>
           </div>
         </div>
-        <div className="flex gap-3 p-5 border-t border-border">
+        <div className="flex gap-3 p-5 border-t border-border sticky bottom-0 bg-background">
           <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors">Cancelar</button>
           <button onClick={save} disabled={!name || isPending}
             className="flex-1 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
@@ -139,35 +288,15 @@ function JobModal({
   );
 }
 
-/* ── Log Panel ── */
-function LogPanel({ jobId }: { jobId: string }) {
-  const { data: logs } = trpc.rpa.getLogs.useQuery({ jobId, limit: 10 });
-  if (!logs?.length) return <p className="text-xs text-muted-foreground py-2">Nenhuma execução registrada.</p>;
-  return (
-    <div className="mt-3 space-y-1.5">
-      {logs.map(log => (
-        <div key={log.id} className="flex items-start gap-2 text-xs">
-          {log.status === "SUCCESS"
-            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0 mt-0.5" />
-            : <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />}
-          <div className="flex-1 min-w-0">
-            <span className="text-foreground">{log.message ?? log.status}</span>
-            {log.itemsFound > 0 && <span className="ml-1 text-primary">({log.itemsFound} itens)</span>}
-          </div>
-          <span className="text-muted-foreground whitespace-nowrap">{new Date(log.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ── Job Card ── */
-function JobCard({ job }: { job: {
-  id: string; name: string; type: string; isActive: boolean;
-  schedule: string | null; lastRunAt: Date | null; lastRunStatus: string | null;
-  config: Record<string, unknown>;
-  logs: { id: string; status: string; message: string | null; itemsFound: number; createdAt: Date }[];
-} }) {
+function JobCard({ job }: {
+  job: {
+    id: string; name: string; type: string; isActive: boolean;
+    schedule: string | null; lastRunAt: Date | null; lastRunStatus: string | null;
+    config: Record<string, unknown>;
+    logs: { id: string; status: string; message: string | null; itemsFound: number; createdAt: Date; details: unknown }[];
+  }
+}) {
   const meta = JOB_TYPE_META[job.type as JobType] ?? JOB_TYPE_META.EDITAL_SEARCH;
   const Icon = meta.icon;
   const utils = trpc.useUtils();
@@ -177,7 +306,9 @@ function JobCard({ job }: { job: {
   const runJob = trpc.rpa.runJob.useMutation({
     onSuccess: (res) => {
       utils.rpa.listJobs.invalidate();
+      utils.rpa.getLogs.invalidate({ jobId: job.id });
       toast.success(res.message);
+      setShowLogs(true);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -189,6 +320,8 @@ function JobCard({ job }: { job: {
   const deleteJob = trpc.rpa.deleteJob.useMutation({
     onSuccess: () => { utils.rpa.listJobs.invalidate(); toast.success("Agente removido"); },
   });
+
+  const portals = (job.config?.portals as string[] | undefined) ?? [];
 
   return (
     <>
@@ -222,13 +355,17 @@ function JobCard({ job }: { job: {
           </div>
         </div>
 
-        <p className="text-xs text-muted-foreground">{meta.desc}</p>
-
+        {/* Keywords */}
         {job.type === "EDITAL_SEARCH" && (job.config as any)?.keywords?.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {((job.config as any).keywords as string[]).map((k: string) => (
-              <span key={k} className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">{k}</span>
+              <span key={k} className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{k}</span>
             ))}
+            {portals.length > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                {portals.join(" · ")} · {(job.config as any)?.uf ?? "BA"}
+              </span>
+            )}
           </div>
         )}
 
@@ -239,9 +376,7 @@ function JobCard({ job }: { job: {
               <span className={cn("flex items-center gap-1",
                 job.lastRunStatus === "SUCCESS" ? "text-emerald-600" :
                 job.lastRunStatus === "FAILED" ? "text-red-500" : "text-muted-foreground")}>
-                {job.lastRunStatus === "SUCCESS" ? <CheckCircle2 className="w-3 h-3" /> :
-                 job.lastRunStatus === "FAILED" ? <XCircle className="w-3 h-3" /> :
-                 <AlertTriangle className="w-3 h-3" />}
+                {job.lastRunStatus === "SUCCESS" ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                 {formatDate(job.lastRunAt)}
               </span>
             )}
@@ -250,7 +385,7 @@ function JobCard({ job }: { job: {
             <button onClick={() => setShowLogs(v => !v)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
               {showLogs ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              Logs
+              Resultados
             </button>
             <button
               onClick={() => runJob.mutate({ id: job.id })}
@@ -258,15 +393,15 @@ function JobCard({ job }: { job: {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {runJob.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-              Executar
+              {runJob.isPending ? "Buscando..." : "Executar"}
             </button>
           </div>
         </div>
-        {showLogs && <LogPanel jobId={job.id} />}
+        {showLogs && <LogPanel jobId={job.id} jobType={job.type} />}
       </div>
       {editing && (
         <JobModal
-          initial={{ id: job.id, name: job.name, type: job.type as JobType, schedule: job.schedule, config: job.config as Record<string, unknown> }}
+          initial={{ id: job.id, name: job.name, type: job.type as JobType, schedule: job.schedule, config: job.config }}
           onClose={() => setEditing(false)}
         />
       )}
@@ -284,7 +419,7 @@ export function RpaContent() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-heading font-bold">Automações RPA</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Agentes de captura e análise automática de editais</p>
+          <p className="text-muted-foreground text-sm mt-0.5">Agentes de captura automática de editais e monitoramento</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => refetch()} className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm hover:bg-muted transition-colors">
@@ -296,23 +431,22 @@ export function RpaContent() {
         </div>
       </div>
 
-      {/* Agent type guide */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {Object.entries(JOB_TYPE_META).map(([, meta]) => {
-          const Icon = meta.icon;
-          return (
-            <div key={meta.label} className={cn("rounded-xl p-4 border border-border flex items-start gap-3", meta.bg)}>
-              <Icon className={cn("w-5 h-5 flex-shrink-0 mt-0.5", meta.color)} />
-              <div>
-                <p className={cn("text-sm font-semibold", meta.color)}>{meta.label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{meta.desc}</p>
-              </div>
+      {/* Portals status */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {PORTAL_OPTIONS.map(p => (
+          <div key={p.id} className={cn("rounded-xl border p-3 flex items-center gap-2.5",
+            p.available ? "border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800" :
+            "border-border bg-muted/30")}>
+            <div className={cn("w-2 h-2 rounded-full flex-shrink-0", p.available ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+            <div>
+              <p className="text-xs font-semibold text-foreground">{p.label}</p>
+              <p className="text-[10px] text-muted-foreground">{p.available ? "API disponível" : "Em breve"}</p>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
-      {/* Jobs list */}
+      {/* Jobs */}
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2].map(i => <div key={i} className="h-28 bg-muted rounded-xl animate-pulse" />)}

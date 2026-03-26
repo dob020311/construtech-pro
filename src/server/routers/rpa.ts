@@ -8,12 +8,115 @@ const jobConfigSchema = z.object({
   daysAhead: z.number().optional(),
 });
 
+interface EditalFound {
+  title: string;
+  organ: string;
+  number: string;
+  modality: string;
+  portal: string;
+  portalUrl: string | null;
+  date: string;
+  value: number | null;
+  uf: string;
+  city: string;
+  keyword: string;
+}
+
+async function searchPNCP(keyword: string, uf: string): Promise<EditalFound[]> {
+  const today = new Date();
+  const past30 = new Date(today);
+  past30.setDate(today.getDate() - 30);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+
+  const url =
+    `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` +
+    `?q=${encodeURIComponent(keyword)}&uf=${uf}` +
+    `&dataInicial=${fmt(past30)}&dataFinal=${fmt(today)}` +
+    `&pagina=1&tamanhoPagina=10`;
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) return [];
+
+  const json = await res.json() as {
+    data?: {
+      objetoCompra?: string;
+      orgaoEntidade?: { razaoSocial?: string };
+      unidadeOrgao?: { municipioNome?: string; ufSigla?: string };
+      numeroControlePncp?: string;
+      modalidadeNome?: string;
+      dataPublicacaoPncp?: string;
+      valorTotalEstimado?: number;
+      linkSistemaOrigem?: string;
+    }[];
+  };
+
+  return (json.data ?? []).map((item) => ({
+    title: item.objetoCompra ?? "Sem descrição",
+    organ: item.orgaoEntidade?.razaoSocial ?? "Órgão não informado",
+    number: item.numeroControlePncp ?? "",
+    modality: item.modalidadeNome ?? "Não informada",
+    portal: "PNCP",
+    portalUrl: item.linkSistemaOrigem ?? null,
+    date: item.dataPublicacaoPncp?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    value: item.valorTotalEstimado ?? null,
+    uf: item.unidadeOrgao?.ufSigla ?? uf,
+    city: item.unidadeOrgao?.municipioNome ?? "",
+    keyword,
+  }));
+}
+
+async function searchComprasGov(keyword: string, uf: string): Promise<EditalFound[]> {
+  const url =
+    `https://compras.dados.gov.br/licitacoes/v1/licitacoes.json` +
+    `?descricao=${encodeURIComponent(keyword)}&uf=${uf}&limit=10`;
+
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!res.ok) return [];
+
+  const json = await res.json() as {
+    _embedded?: {
+      licitacoes?: {
+        objeto?: string;
+        uasg?: { nome_unidade?: string; uf?: string; municipio?: string };
+        numero_licitacao?: string;
+        modalidade_licitacao?: { descricao?: string };
+        data_abertura_proposta?: string;
+        valor_licitacao?: number;
+        links?: { href?: string }[];
+      }[];
+    };
+  };
+
+  const items = json._embedded?.licitacoes ?? [];
+  return items.map((item) => ({
+    title: item.objeto ?? "Sem descrição",
+    organ: item.uasg?.nome_unidade ?? "Órgão não informado",
+    number: item.numero_licitacao ?? "",
+    modality: item.modalidade_licitacao?.descricao ?? "Não informada",
+    portal: "ComprasGov",
+    portalUrl: item.links?.[0]?.href ?? null,
+    date: item.data_abertura_proposta?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    value: item.valor_licitacao ?? null,
+    uf: item.uasg?.uf ?? uf,
+    city: item.uasg?.municipio ?? "",
+    keyword,
+  }));
+}
+
 export const rpaRouter = createTRPCRouter({
   listJobs: protectedProcedure.query(async ({ ctx }) => {
     return ctx.prisma.rpaJob.findMany({
       where: { companyId: ctx.session.user.companyId },
       include: {
-        logs: { orderBy: { createdAt: "desc" }, take: 3 },
+        logs: { orderBy: { createdAt: "desc" }, take: 5 },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -76,67 +179,87 @@ export const rpaRouter = createTRPCRouter({
       try {
         let itemsFound = 0;
         let message = "";
+        let details: unknown = null;
 
+        /* ── DOCUMENT_CHECK ── */
         if (job.type === "DOCUMENT_CHECK") {
-          // Check for expiring documents in the next 30 days
           const soon = new Date();
           soon.setDate(soon.getDate() + 30);
           const expiring = await ctx.prisma.document.findMany({
             where: {
               companyId: ctx.session.user.companyId,
               expirationDate: { lte: soon, gte: new Date() },
-              status: { not: "EXPIRED" },
             },
-            select: { id: true, name: true, expirationDate: true },
+            select: { id: true, name: true, expirationDate: true, type: true },
           });
-          // Update status of expired docs
           await ctx.prisma.document.updateMany({
-            where: {
-              companyId: ctx.session.user.companyId,
-              expirationDate: { lt: new Date() },
-              status: { not: "EXPIRED" },
-            },
+            where: { companyId: ctx.session.user.companyId, expirationDate: { lt: new Date() } },
             data: { status: "EXPIRED" },
           });
-          // Update status of expiring docs
           await ctx.prisma.document.updateMany({
-            where: {
-              companyId: ctx.session.user.companyId,
-              expirationDate: { gte: new Date(), lte: soon },
-              status: { not: "EXPIRING" },
-            },
+            where: { companyId: ctx.session.user.companyId, expirationDate: { gte: new Date(), lte: soon } },
             data: { status: "EXPIRING" },
           });
           itemsFound = expiring.length;
           message = `${expiring.length} documento(s) vencendo em 30 dias. Status atualizado.`;
+          details = { documents: expiring };
 
+        /* ── EDITAL_SEARCH ── */
         } else if (job.type === "EDITAL_SEARCH") {
           const keywords = (config.keywords as string[] | undefined) ?? [];
           const uf = (config.uf as string | undefined) ?? "BA";
-          // Search PNCP public API
-          const results: string[] = [];
-          for (const keyword of keywords.slice(0, 3)) {
-            try {
-              const url = `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?q=${encodeURIComponent(keyword)}&uf=${uf}&pagina=1&tamanhoPagina=5`;
-              const res = await fetch(url, {
-                headers: { "Accept": "application/json" },
-                signal: AbortSignal.timeout(8000),
-              });
-              if (res.ok) {
-                const data = await res.json() as { data?: unknown[] };
-                results.push(...(data.data ?? []).map(() => keyword));
-              }
-            } catch {
-              // portal may be unreachable — continue
-            }
-          }
-          itemsFound = results.length;
-          message = keywords.length === 0
-            ? "Nenhuma palavra-chave configurada. Edite o agente para adicionar palavras-chave."
-            : `Busca realizada para: ${keywords.join(", ")}. ${itemsFound} resultado(s) no PNCP.`;
+          const portals = (config.portals as string[] | undefined) ?? ["PNCP", "ComprasGov"];
 
+          if (keywords.length === 0) {
+            message = "Nenhuma palavra-chave configurada. Edite o agente para adicionar palavras-chave.";
+          } else {
+            const allEditais: EditalFound[] = [];
+            const errors: string[] = [];
+
+            for (const keyword of keywords.slice(0, 5)) {
+              if (portals.includes("PNCP")) {
+                try {
+                  const results = await searchPNCP(keyword, uf);
+                  allEditais.push(...results);
+                } catch {
+                  errors.push("PNCP indisponível");
+                }
+              }
+              if (portals.includes("ComprasGov")) {
+                try {
+                  const results = await searchComprasGov(keyword, uf);
+                  allEditais.push(...results);
+                } catch {
+                  errors.push("ComprasGov indisponível");
+                }
+              }
+              // BLL and BB don't have public APIs — mark as skipped
+              if (portals.includes("BLL")) {
+                errors.push("BLL: API não pública — acesse bllcompras.com manualmente");
+              }
+              if (portals.includes("BB")) {
+                errors.push("Portal BB: API não pública — acesse licitacoes-e.com.br manualmente");
+              }
+            }
+
+            // Deduplicate by title+organ
+            const seen = new Set<string>();
+            const unique = allEditais.filter((e) => {
+              const key = `${e.title}|${e.organ}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+
+            itemsFound = unique.length;
+            const uniqueErrors = errors.filter((e, i, a) => a.indexOf(e) === i);
+            const errNote = uniqueErrors.length > 0 ? ` (${uniqueErrors.join("; ")})` : "";
+            message = `${unique.length} edital(is) encontrado(s) para: ${keywords.join(", ")} — ${uf}${errNote}`;
+            details = { editais: unique, portals, keywords, uf };
+          }
+
+        /* ── PRICE_UPDATE ── */
         } else if (job.type === "PRICE_UPDATE") {
-          // Mark last sync date in config
           itemsFound = 0;
           message = "Tabela SINAPI consultada. Preços atualizados com sucesso.";
         }
@@ -147,13 +270,7 @@ export const rpaRouter = createTRPCRouter({
           data: { lastRunAt: new Date(), lastRunStatus: "SUCCESS" },
         });
         await ctx.prisma.rpaLog.create({
-          data: {
-            jobId: job.id,
-            status: "SUCCESS",
-            message,
-            itemsFound,
-            duration,
-          },
+          data: { jobId: job.id, status: "SUCCESS", message, itemsFound, duration, details: details as object ?? undefined },
         });
         return { success: true, message, itemsFound, duration };
 
