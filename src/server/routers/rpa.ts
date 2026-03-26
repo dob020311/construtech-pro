@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure, adminProcedure } from "../trpc";
+import { sendDocumentExpirationAlert, sendRpaJobReport } from "@/lib/email";
 
 const jobConfigSchema = z.object({
   keywords: z.array(z.string()).optional(),
@@ -272,6 +273,30 @@ export const rpaRouter = createTRPCRouter({
           itemsFound = expiring.length;
           message = `${expiring.length} documento(s) vencendo em 30 dias. Status atualizado.`;
           details = { documents: expiring };
+
+          // Send email alerts to admins/managers with emailNotifications enabled
+          if (expiring.length > 0) {
+            const company = await ctx.prisma.company.findUnique({
+              where: { id: ctx.session.user.companyId },
+              select: { name: true },
+            });
+            const recipients = await ctx.prisma.user.findMany({
+              where: {
+                companyId: ctx.session.user.companyId,
+                emailNotifications: true,
+                role: { in: ["ADMIN", "MANAGER"] },
+              },
+              select: { name: true, email: true },
+            });
+            for (const user of recipients) {
+              await sendDocumentExpirationAlert({
+                to: user.email,
+                recipientName: user.name,
+                companyName: company?.name ?? "sua empresa",
+                docs: expiring,
+              });
+            }
+          }
 
         /* ── EDITAL_SEARCH ── */
         } else if (job.type === "EDITAL_SEARCH") {

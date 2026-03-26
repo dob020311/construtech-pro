@@ -14,6 +14,7 @@ export const userRouter = createTRPCRouter({
         email: true,
         role: true,
         avatar: true,
+        emailNotifications: true,
         companyId: true,
         company: {
           select: { id: true, name: true, cnpj: true, logo: true, segments: true },
@@ -69,13 +70,14 @@ export const userRouter = createTRPCRouter({
       z.object({
         name: z.string().min(2).optional(),
         avatar: z.string().optional(),
+        emailNotifications: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
       return ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
         data: input,
-        select: { id: true, name: true, email: true, role: true, avatar: true },
+        select: { id: true, name: true, email: true, role: true, avatar: true, emailNotifications: true },
       });
     }),
 

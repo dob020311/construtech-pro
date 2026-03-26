@@ -32,21 +32,22 @@ model Company {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role         Role     @default(ANALYST)
-  avatar       String?
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id])
-  activities   Activity[]
-  assignments  LicitacaoAssignment[]
-  notifications Notification[]
-  accounts     Account[]
-  sessions     Session[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(ANALYST)
+  avatar             String?
+  emailNotifications Boolean  @default(true)
+  companyId          String
+  company            Company  @relation(fields: [companyId], references: [id])
+  activities         Activity[]
+  assignments        LicitacaoAssignment[]
+  notifications      Notification[]
+  accounts           Account[]
+  sessions           Session[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 enum Role {
