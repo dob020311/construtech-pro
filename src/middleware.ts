@@ -10,11 +10,16 @@ export async function middleware(req: NextRequest) {
 
   if (isPublicPath) return NextResponse.next();
 
+  const isSecure = process.env.NODE_ENV === "production";
+  // In production (HTTPS) NextAuth prefixes the cookie with __Secure-
+  const cookieName = isSecure
+    ? "__Secure-authjs.session-token"
+    : "authjs.session-token";
+
   const token = await getToken({
     req,
     secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-    cookieName: "authjs.session-token",
-    secureCookie: process.env.NODE_ENV === "production",
+    cookieName,
   });
 
   if (!token) {
