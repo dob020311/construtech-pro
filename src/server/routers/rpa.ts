@@ -23,50 +23,66 @@ interface EditalFound {
 }
 
 async function searchPNCP(keyword: string, uf: string): Promise<EditalFound[]> {
-  const today = new Date();
-  const past30 = new Date(today);
-  past30.setDate(today.getDate() - 30);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  // Try two approaches: with uf filter and without (broader search)
+  const urls = [
+    `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?q=${encodeURIComponent(keyword)}&uf=${uf}&pagina=1&tamanhoPagina=10`,
+    `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?q=${encodeURIComponent(keyword)}&pagina=1&tamanhoPagina=5`,
+  ];
 
-  const url =
-    `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao` +
-    `?q=${encodeURIComponent(keyword)}&uf=${uf}` +
-    `&dataInicial=${fmt(past30)}&dataFinal=${fmt(today)}` +
-    `&pagina=1&tamanhoPagina=10`;
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { Accept: "application/json", "User-Agent": "ConstruTech-Pro/1.0" },
+        signal: AbortSignal.timeout(12000),
+      });
 
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(10000),
-  });
+      if (!res.ok) continue;
 
-  if (!res.ok) return [];
+      const text = await res.text();
+      if (!text) continue;
 
-  const json = await res.json() as {
-    data?: {
-      objetoCompra?: string;
-      orgaoEntidade?: { razaoSocial?: string };
-      unidadeOrgao?: { municipioNome?: string; ufSigla?: string };
-      numeroControlePncp?: string;
-      modalidadeNome?: string;
-      dataPublicacaoPncp?: string;
-      valorTotalEstimado?: number;
-      linkSistemaOrigem?: string;
-    }[];
-  };
+      let json: unknown;
+      try { json = JSON.parse(text); } catch { continue; }
 
-  return (json.data ?? []).map((item) => ({
-    title: item.objetoCompra ?? "Sem descrição",
-    organ: item.orgaoEntidade?.razaoSocial ?? "Órgão não informado",
-    number: item.numeroControlePncp ?? "",
-    modality: item.modalidadeNome ?? "Não informada",
-    portal: "PNCP",
-    portalUrl: item.linkSistemaOrigem ?? null,
-    date: item.dataPublicacaoPncp?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
-    value: item.valorTotalEstimado ?? null,
-    uf: item.unidadeOrgao?.ufSigla ?? uf,
-    city: item.unidadeOrgao?.municipioNome ?? "",
-    keyword,
-  }));
+      // Response may be array or object with data field
+      const items: unknown[] = Array.isArray(json)
+        ? json
+        : (json as Record<string, unknown>)?.data
+          ? ((json as Record<string, unknown>).data as unknown[])
+          : [];
+
+      if (items.length === 0) continue;
+
+      return items.map((item) => {
+        const i = item as Record<string, unknown>;
+        const orgao = i.orgaoEntidade as Record<string, unknown> | undefined;
+        const unidade = i.unidadeOrgao as Record<string, unknown> | undefined;
+        const link = (i.linkSistemaOrigem as string | undefined) ?? null;
+        const numCtrl = (i.numeroControlePncp as string | undefined) ?? "";
+        const pncpLink = numCtrl
+          ? `https://pncp.gov.br/app/editais/${numCtrl.replace(/\//g, "-")}`
+          : link;
+
+        return {
+          title: (i.objetoCompra as string | undefined) ?? "Sem descrição",
+          organ: (orgao?.razaoSocial as string | undefined) ?? "Órgão não informado",
+          number: numCtrl,
+          modality: (i.modalidadeNome as string | undefined) ?? "Não informada",
+          portal: "PNCP",
+          portalUrl: pncpLink,
+          date: ((i.dataPublicacaoPncp as string | undefined) ?? new Date().toISOString()).slice(0, 10),
+          value: (i.valorTotalEstimado as number | undefined) ?? null,
+          uf: (unidade?.ufSigla as string | undefined) ?? uf,
+          city: (unidade?.municipioNome as string | undefined) ?? "",
+          keyword,
+        };
+      });
+    } catch {
+      continue;
+    }
+  }
+
+  return [];
 }
 
 async function searchComprasGov(keyword: string, uf: string): Promise<EditalFound[]> {

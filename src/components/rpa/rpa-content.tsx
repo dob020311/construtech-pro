@@ -4,7 +4,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Bot, Clock, CheckCircle2, XCircle, Play, RefreshCw,
   Plus, Trash2, Settings, X, Loader2, FileSearch, ShieldCheck, DollarSign,
-  ChevronDown, ChevronUp, ExternalLink, Building2,
+  ChevronDown, ChevronUp, ExternalLink, Building2, Check,
 } from "lucide-react";
 import { cn, formatDate, formatCurrency } from "@/lib/utils";
 import { useState } from "react";
@@ -99,16 +99,25 @@ function EditalCard({ edital }: { edital: EditalFound }) {
 }
 
 /* ── Log Panel with edital results ── */
-function LogPanel({ jobId, jobType }: { jobId: string; jobType: string }) {
+function LogPanel({ jobId, jobType, autoExpandLatest }: { jobId: string; jobType: string; autoExpandLatest?: boolean }) {
   const { data: logs } = trpc.rpa.getLogs.useQuery({ jobId, limit: 10 });
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+
+  // Auto-expand latest log when it has editais
+  const latestLog = logs?.[0];
+  const latestDetails = latestLog?.details as { editais?: EditalFound[] } | null;
+  const latestEditais = latestDetails?.editais ?? [];
+
+  if (autoExpandLatest && latestLog && latestEditais.length > 0 && expandedLog === null) {
+    setExpandedLog(latestLog.id);
+  }
 
   if (!logs?.length) return <p className="text-xs text-muted-foreground py-2">Nenhuma execução registrada.</p>;
 
   return (
     <div className="mt-3 space-y-2">
       {logs.map(log => {
-        const details = log.details as { editais?: EditalFound[]; documents?: unknown[] } | null;
+        const details = log.details as { editais?: EditalFound[] } | null;
         const editais = details?.editais ?? [];
         const isExpanded = expandedLog === log.id;
 
@@ -120,23 +129,28 @@ function LogPanel({ jobId, jobType }: { jobId: string; jobType: string }) {
                 : <XCircle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />}
               <div className="flex-1 min-w-0">
                 <span className="text-foreground">{log.message ?? log.status}</span>
-                {log.itemsFound > 0 && <span className="ml-1 font-medium text-primary">({log.itemsFound} {jobType === "EDITAL_SEARCH" ? "editais" : "itens"})</span>}
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-muted-foreground whitespace-nowrap">
-                  {new Date(log.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                </span>
-                {editais.length > 0 && (
-                  <button onClick={() => setExpandedLog(isExpanded ? null : log.id)}
-                    className="flex items-center gap-0.5 text-primary hover:underline">
+              <span className="text-muted-foreground whitespace-nowrap flex-shrink-0">
+                {new Date(log.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+              </span>
+            </div>
+            {jobType === "EDITAL_SEARCH" && (
+              <div className="px-2.5 py-2 border-t border-border bg-background">
+                {editais.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">Nenhum edital encontrado nesta execução.</p>
+                ) : (
+                  <button
+                    onClick={() => setExpandedLog(isExpanded ? null : log.id)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                  >
                     {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    {isExpanded ? "Ocultar" : `Ver ${editais.length} edital(is) encontrado(s)`}
                   </button>
                 )}
               </div>
-            </div>
+            )}
             {isExpanded && editais.length > 0 && (
               <div className="p-2.5 space-y-2 border-t border-border">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{editais.length} Edital(is) Encontrado(s)</p>
                 {editais.map((e, i) => <EditalCard key={i} edital={e} />)}
               </div>
             )}
@@ -240,26 +254,36 @@ function JobModal({
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">Portais de Busca</label>
                 <div className="space-y-2">
-                  {PORTAL_OPTIONS.map(p => (
-                    <label key={p.id} className={cn("flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
-                      portals.includes(p.id) ? "border-primary bg-primary/5" : "border-border hover:bg-muted",
-                      !p.available && "opacity-60 cursor-not-allowed"
-                    )}>
-                      <input type="checkbox" checked={portals.includes(p.id)}
-                        onChange={() => p.available && togglePortal(p.id)}
-                        disabled={!p.available}
-                        className="mt-0.5 accent-primary" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{p.label}</span>
-                          {!p.available && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">Em breve</span>
-                          )}
+                  {PORTAL_OPTIONS.map(p => {
+                    const selected = portals.includes(p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => { if (p.available) togglePortal(p.id); }}
+                        className={cn(
+                          "flex items-start gap-3 p-3 rounded-lg border transition-colors",
+                          p.available ? "cursor-pointer" : "cursor-not-allowed opacity-60",
+                          selected && p.available ? "border-primary bg-primary/5" : "border-border hover:bg-muted"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors",
+                          selected && p.available ? "bg-primary border-primary" : "border-muted-foreground/40 bg-background"
+                        )}>
+                          {selected && p.available && <Check className="w-2.5 h-2.5 text-white" />}
                         </div>
-                        <p className="text-xs text-muted-foreground">{p.desc}</p>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{p.label}</span>
+                            {!p.available && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">Em breve</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">{p.desc}</p>
+                        </div>
                       </div>
-                    </label>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </>
@@ -303,12 +327,15 @@ function JobCard({ job }: {
   const [showLogs, setShowLogs] = useState(false);
   const [editing, setEditing] = useState(false);
 
+  const [autoExpand, setAutoExpand] = useState(false);
+
   const runJob = trpc.rpa.runJob.useMutation({
     onSuccess: (res) => {
       utils.rpa.listJobs.invalidate();
       utils.rpa.getLogs.invalidate({ jobId: job.id });
       toast.success(res.message);
       setShowLogs(true);
+      setAutoExpand(true);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -397,7 +424,7 @@ function JobCard({ job }: {
             </button>
           </div>
         </div>
-        {showLogs && <LogPanel jobId={job.id} jobType={job.type} />}
+        {showLogs && <LogPanel jobId={job.id} jobType={job.type} autoExpandLatest={autoExpand} />}
       </div>
       {editing && (
         <JobModal
