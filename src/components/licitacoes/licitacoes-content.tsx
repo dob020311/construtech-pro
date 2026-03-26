@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Plus,
@@ -27,12 +27,14 @@ export function LicitacoesContent() {
   const [showCreate, setShowCreate] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  // Debounce search
-  const handleSearch = (value: string) => {
-    setSearch(value);
-    const timer = setTimeout(() => setDebouncedSearch(value), 300);
+  // Debounce search properly with useEffect
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1); // reset to page 1 on new search
+    }, 300);
     return () => clearTimeout(timer);
-  };
+  }, [search]);
 
   const { data, isLoading } = trpc.licitacao.list.useQuery({
     page,
@@ -81,7 +83,7 @@ export function LicitacoesContent() {
             type="text"
             placeholder="Buscar por número, objeto, órgão..."
             value={search}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-colors"
           />
         </div>
@@ -162,21 +164,32 @@ export function LicitacoesContent() {
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            {Array.from({ length: Math.min(data.pages, 5) }, (_, i) => {
-              const p = i + 1;
-              return (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={cn(
-                    "w-8 h-8 rounded-lg text-sm font-medium transition-colors",
-                    page === p ? "bg-primary text-white" : "hover:bg-muted"
-                  )}
-                >
-                  {p}
-                </button>
+            {(() => {
+              const total = data.pages;
+              const window = 2; // pages each side of current
+              const start = Math.max(1, page - window);
+              const end = Math.min(total, page + window);
+              const pages = [];
+              if (start > 1) pages.push(1, start > 2 ? "…" : null);
+              for (let p = start; p <= end; p++) pages.push(p);
+              if (end < total) pages.push(end < total - 1 ? "…" : null, total);
+              return pages.filter(Boolean).map((p, i) =>
+                p === "…" ? (
+                  <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-muted-foreground text-sm">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p as number)}
+                    className={cn(
+                      "w-8 h-8 rounded-lg text-sm font-medium transition-colors",
+                      page === p ? "bg-primary text-white" : "hover:bg-muted"
+                    )}
+                  >
+                    {p}
+                  </button>
+                )
               );
-            })}
+            })()}
             <button
               onClick={() => setPage(page + 1)}
               disabled={page === data.pages}

@@ -12,6 +12,18 @@ import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { LicitacaoStatus } from "@prisma/client";
 
+function relativeTime(date: Date | string): string {
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "agora";
+  if (mins < 60) return `${mins} min atrás`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h atrás`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d atrás`;
+  return new Date(date).toLocaleDateString("pt-BR");
+}
+
 const STATUS_LABELS: Record<string, string> = {
   IDENTIFIED: "Identificada", ANALYZING: "Analisando", GO: "GO", NO_GO: "NO-GO",
   BUDGETING: "Orçando", PROPOSAL_SENT: "Proposta Enviada", WON: "Ganhou",
@@ -243,7 +255,7 @@ export function LicitacaoDetalhe({ id }: { id: string }) {
               <div className="bg-card border border-border rounded-xl p-5">
                 <h3 className="font-heading font-semibold text-sm mb-3">Documentos Exigidos</h3>
                 <div className="space-y-1.5">
-                  {licitacao.documents.slice(0, 8).map((doc) => (
+                  {licitacao.documents.map((doc) => (
                     <div key={doc.id} className="flex items-center gap-2 text-sm">
                       <div className={cn("w-2 h-2 rounded-full flex-shrink-0",
                         doc.status === "APPROVED" ? "bg-green-500" :
@@ -253,9 +265,6 @@ export function LicitacaoDetalhe({ id }: { id: string }) {
                       <span className="truncate text-muted-foreground">{doc.requiredName}</span>
                     </div>
                   ))}
-                  {licitacao.documents.length > 8 && (
-                    <p className="text-xs text-muted-foreground">+{licitacao.documents.length - 8} mais</p>
-                  )}
                 </div>
               </div>
             )}
@@ -306,7 +315,9 @@ export function LicitacaoDetalhe({ id }: { id: string }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{act.title}</p>
                     {act.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{act.description}</p>}
-                    <p className="text-xs text-muted-foreground mt-1">{act.user.name} · {formatDate(act.createdAt)}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {act.user.name} · <span title={formatDate(act.createdAt)}>{relativeTime(act.createdAt)}</span>
+                    </p>
                   </div>
                 </div>
               ))}
