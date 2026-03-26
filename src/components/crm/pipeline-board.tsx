@@ -2,7 +2,7 @@
 
 import { trpc } from "@/lib/trpc";
 import { cn, formatCurrency, formatDate, STATUS_COLORS, STATUS_LABELS } from "@/lib/utils";
-import { Building2, Calendar, DollarSign } from "lucide-react";
+import { Building2, Calendar, DollarSign, X } from "lucide-react";
 import Link from "next/link";
 import { PipelineStage } from "@prisma/client";
 import { toast } from "sonner";
@@ -42,6 +42,11 @@ export function PipelineBoard() {
 
   const { mutate: moveEntry } = trpc.crm.movePipelineEntry.useMutation({
     onSuccess: () => utils.crm.getPipeline.invalidate(),
+    onError: (err) => toast.error(err.message),
+  });
+
+  const { mutate: removeEntry } = trpc.crm.removePipelineEntry.useMutation({
+    onSuccess: () => { utils.crm.getPipeline.invalidate(); toast.success("Removido do funil"); },
     onError: (err) => toast.error(err.message),
   });
 
@@ -119,10 +124,17 @@ export function PipelineBoard() {
                     <div className="flex items-start justify-between gap-2 mb-2">
                       <Link
                         href={`/licitacoes/${entry.licitacao.id}`}
-                        className="text-sm font-medium leading-tight hover:text-primary transition-colors line-clamp-2"
+                        className="text-sm font-medium leading-tight hover:text-primary transition-colors line-clamp-2 flex-1"
                       >
                         {entry.licitacao.object}
                       </Link>
+                      <button
+                        onClick={() => removeEntry({ licitacaoId: entry.licitacao.id })}
+                        title="Remover do funil"
+                        className="flex-shrink-0 p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
 
                     <p className="text-xs font-mono text-primary mb-2">{entry.licitacao.number}</p>

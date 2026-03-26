@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { Building2, Search, X, Plus, ExternalLink, Users, FileText } from "lucide-react";
+import { Building2, Search, X, Plus, ExternalLink, Users, FileText, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function EmpresasContent() {
@@ -10,6 +10,8 @@ export function EmpresasContent() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const utils = trpc.useUtils();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -20,6 +22,11 @@ export function EmpresasContent() {
   }, [search]);
 
   const { data, isLoading } = trpc.crm.listOrganizations.useQuery({ page, limit: 20, search: debouncedSearch || undefined });
+
+  const deleteOrg = trpc.crm.deleteOrganization.useMutation({
+    onSuccess: () => { utils.crm.listOrganizations.invalidate(); setConfirmDelete(null); toast.success("Organização removida"); },
+    onError: (err) => { toast.error(err.message); setConfirmDelete(null); },
+  });
 
   return (
     <div className="space-y-5">
@@ -57,7 +64,7 @@ export function EmpresasContent() {
             <div key={org.id} className="bg-card border border-border rounded-xl p-4 hover:border-primary/30 hover:shadow-sm transition-all">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
                     <Building2 className="w-4 h-4 text-primary" />
                   </div>
                   <div>
@@ -65,12 +72,32 @@ export function EmpresasContent() {
                     {org.type && <p className="text-xs text-muted-foreground">{org.type}</p>}
                   </div>
                 </div>
-                {org.portalUrl && (
-                  <a href={org.portalUrl} target="_blank" rel="noopener noreferrer"
-                    className="p-1 text-muted-foreground hover:text-primary transition-colors">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {org.portalUrl && (
+                    <a href={org.portalUrl} target="_blank" rel="noopener noreferrer"
+                      className="p-1 text-muted-foreground hover:text-primary transition-colors">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  {confirmDelete === org.id ? (
+                    <div className="flex items-center gap-1">
+                      <span className="text-[11px] text-destructive">Excluir?</span>
+                      <button onClick={() => deleteOrg.mutate({ id: org.id })} disabled={deleteOrg.isPending}
+                        className="text-[11px] px-2 py-0.5 bg-destructive text-white rounded hover:bg-destructive/90 disabled:opacity-50">
+                        Sim
+                      </button>
+                      <button onClick={() => setConfirmDelete(null)}
+                        className="text-[11px] px-2 py-0.5 border border-border rounded hover:bg-muted">
+                        Não
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(org.id)}
+                      className="p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
                 {org.cnpj && <span>{org.cnpj}</span>}

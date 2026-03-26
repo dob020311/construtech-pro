@@ -127,6 +127,17 @@ export const crmRouter = createTRPCRouter({
       });
     }),
 
+  deleteContact: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const contact = await ctx.prisma.contact.findFirst({
+        where: { id: input.id, companyId: ctx.session.user.companyId },
+      });
+      if (!contact) throw new Error("Contato não encontrado");
+      await ctx.prisma.contact.delete({ where: { id: input.id } });
+      return { success: true };
+    }),
+
   listOrganizations: protectedProcedure
     .input(
       z.object({
@@ -181,6 +192,28 @@ export const crmRouter = createTRPCRouter({
           companyId: ctx.session.user.companyId,
         },
       });
+    }),
+
+  deleteOrganization: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const org = await ctx.prisma.organization.findFirst({
+        where: { id: input.id, companyId: ctx.session.user.companyId },
+      });
+      if (!org) throw new Error("Organização não encontrada");
+      await ctx.prisma.organization.delete({ where: { id: input.id } });
+      return { success: true };
+    }),
+
+  removePipelineEntry: protectedProcedure
+    .input(z.object({ licitacaoId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const entry = await ctx.prisma.pipelineEntry.findFirst({
+        where: { licitacaoId: input.licitacaoId, licitacao: { companyId: ctx.session.user.companyId } },
+      });
+      if (!entry) throw new Error("Entrada não encontrada");
+      await ctx.prisma.pipelineEntry.delete({ where: { licitacaoId: input.licitacaoId } });
+      return { success: true };
     }),
 
   listActivities: protectedProcedure

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { Users, Search, X, Plus, Mail, Phone, Building2 } from "lucide-react";
+import { Users, Search, X, Plus, Mail, Phone, Building2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function ContatosContent() {
@@ -10,6 +10,8 @@ export function ContatosContent() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const utils = trpc.useUtils();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -20,6 +22,11 @@ export function ContatosContent() {
   }, [search]);
 
   const { data, isLoading } = trpc.crm.listContacts.useQuery({ page, limit: 20, search: debouncedSearch || undefined });
+
+  const deleteContact = trpc.crm.deleteContact.useMutation({
+    onSuccess: () => { utils.crm.listContacts.invalidate(); setConfirmDelete(null); toast.success("Contato removido"); },
+    onError: (err) => { toast.error(err.message); setConfirmDelete(null); },
+  });
 
   return (
     <div className="space-y-5">
@@ -56,13 +63,31 @@ export function ContatosContent() {
           {data?.items.map((c) => (
             <div key={c.id} className="bg-card border border-border rounded-xl p-4 hover:border-primary/30 hover:shadow-sm transition-all">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm">
+                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary text-sm flex-shrink-0">
                   {c.name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm truncate">{c.name}</p>
                   {c.role && <p className="text-xs text-muted-foreground">{c.role}</p>}
                 </div>
+                {confirmDelete === c.id ? (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className="text-[11px] text-destructive">Excluir?</span>
+                    <button onClick={() => deleteContact.mutate({ id: c.id })} disabled={deleteContact.isPending}
+                      className="text-[11px] px-2 py-0.5 bg-destructive text-white rounded hover:bg-destructive/90 disabled:opacity-50">
+                      Sim
+                    </button>
+                    <button onClick={() => setConfirmDelete(null)}
+                      className="text-[11px] px-2 py-0.5 border border-border rounded hover:bg-muted">
+                      Não
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmDelete(c.id)}
+                    className="flex-shrink-0 p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               <div className="space-y-1">
                 {c.email && <p className="text-xs text-muted-foreground flex items-center gap-1.5"><Mail className="w-3 h-3" />{c.email}</p>}
