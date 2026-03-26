@@ -1,6 +1,11 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy init — Resend throws in constructor if key is undefined
+let _resend: Resend | null = null;
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY!);
+  return _resend;
+}
 const FROM = process.env.EMAIL_FROM ?? "ConstruTech Pro <noreply@construtech.pro>";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://construtech-pro-xi.vercel.app";
 
@@ -142,7 +147,7 @@ export async function sendDocumentExpirationAlert(opts: {
   }
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: FROM,
       to: opts.to,
       subject: `⚠️ ${opts.docs.length} documento(s) vencendo — ${opts.companyName}`,
@@ -199,7 +204,7 @@ export async function sendRpaJobReport(opts: {
 </html>`;
 
   try {
-    await resend.emails.send({
+    await getResend().emails.send({
       from: FROM,
       to: opts.to,
       subject: `✅ Agente "${opts.jobName}" executado — ${opts.itemsFound} resultado(s)`,
