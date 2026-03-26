@@ -127,6 +127,14 @@ export const orcamentoRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const chapter = await ctx.prisma.orcamentoChapter.findFirst({
+        where: { id: input.chapterId },
+        include: { orcamento: { select: { companyId: true } } },
+      });
+      if (!chapter || chapter.orcamento.companyId !== ctx.session.user.companyId) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
+
       const totalPrice = new Decimal(input.quantity).times(input.unitPrice).toNumber();
 
       const item = await ctx.prisma.orcamentoItem.create({
@@ -165,8 +173,13 @@ export const orcamentoRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { id, quantity, unitPrice, ...rest } = input;
 
-      const existing = await ctx.prisma.orcamentoItem.findUnique({ where: { id } });
-      if (!existing) throw new TRPCError({ code: "NOT_FOUND" });
+      const existing = await ctx.prisma.orcamentoItem.findUnique({
+        where: { id },
+        include: { chapter: { include: { orcamento: { select: { companyId: true } } } } },
+      });
+      if (!existing || existing.chapter.orcamento.companyId !== ctx.session.user.companyId) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
 
       const newQty = quantity ?? Number(existing.quantity);
       const newPrice = unitPrice ?? Number(existing.unitPrice);
@@ -189,8 +202,13 @@ export const orcamentoRouter = createTRPCRouter({
   deleteItem: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const item = await ctx.prisma.orcamentoItem.findUnique({ where: { id: input.id } });
-      if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+      const item = await ctx.prisma.orcamentoItem.findUnique({
+        where: { id: input.id },
+        include: { chapter: { include: { orcamento: { select: { companyId: true } } } } },
+      });
+      if (!item || item.chapter.orcamento.companyId !== ctx.session.user.companyId) {
+        throw new TRPCError({ code: "NOT_FOUND" });
+      }
 
       await ctx.prisma.orcamentoItem.delete({ where: { id: input.id } });
       await recalculateTotals(ctx.prisma, item.chapterId);

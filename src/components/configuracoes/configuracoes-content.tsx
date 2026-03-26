@@ -470,6 +470,10 @@ export function ConfiguracoesContent() {
   const [name, setName] = useState("");
   const utils = trpc.useUtils();
 
+  useEffect(() => {
+    if (me?.name) setName(me.name);
+  }, [me?.name]);
+
   const updateProfile = trpc.user.updateProfile.useMutation({
     onSuccess: () => { utils.user.me.invalidate(); toast.success("Perfil atualizado"); },
     onError: (err) => toast.error(err.message),
@@ -520,16 +524,16 @@ export function ConfiguracoesContent() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1.5">Nome</label>
-                    <input type="text" defaultValue={me.name} onChange={e => setName(e.target.value)}
+                    <input type="text" value={name} onChange={e => setName(e.target.value)}
                       className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1.5">E-mail</label>
-                    <input type="email" defaultValue={me.email} disabled
+                    <input type="email" value={me.email} disabled
                       className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-sm opacity-60 cursor-not-allowed" />
                   </div>
-                  <button onClick={() => { if (name) updateProfile.mutate({ name }); }}
-                    disabled={updateProfile.isPending}
+                  <button onClick={() => { if (name.trim()) updateProfile.mutate({ name: name.trim() }); }}
+                    disabled={updateProfile.isPending || !name.trim()}
                     className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors">
                     {updateProfile.isPending ? "Salvando..." : "Salvar alterações"}
                   </button>

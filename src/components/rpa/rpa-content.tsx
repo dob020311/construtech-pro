@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, ExternalLink, Building2, Check,
 } from "lucide-react";
 import { cn, formatDate, formatCurrency } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 const PORTAL_OPTIONS = [
@@ -108,9 +108,12 @@ function LogPanel({ jobId, jobType, autoExpandLatest }: { jobId: string; jobType
   const latestDetails = latestLog?.details as { editais?: EditalFound[] } | null;
   const latestEditais = latestDetails?.editais ?? [];
 
-  if (autoExpandLatest && latestLog && latestEditais.length > 0 && expandedLog === null) {
-    setExpandedLog(latestLog.id);
-  }
+  useEffect(() => {
+    if (autoExpandLatest && latestLog && latestEditais.length > 0 && expandedLog === null) {
+      setExpandedLog(latestLog.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoExpandLatest, latestLog?.id, latestEditais.length]);
 
   if (!logs?.length) return <p className="text-xs text-muted-foreground py-2">Nenhuma execução registrada.</p>;
 
