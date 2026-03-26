@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Users, Search, X, Plus, Mail, Phone, Building2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function ContatosContent() {
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
 
-  const { data, isLoading } = trpc.crm.listContacts.useQuery({ page, limit: 20, search: search || undefined });
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const { data, isLoading } = trpc.crm.listContacts.useQuery({ page, limit: 20, search: debouncedSearch || undefined });
 
   return (
     <div className="space-y-5">
@@ -28,7 +37,7 @@ export function ContatosContent() {
       <div className="relative max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input type="text" placeholder="Buscar contatos..."
-          value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          value={search} onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
         {search && <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5 text-muted-foreground" /></button>}
       </div>

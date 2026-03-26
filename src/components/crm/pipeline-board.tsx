@@ -169,12 +169,13 @@ export function PipelineBoard() {
                       <div className="mt-2 pt-2 border-t border-border">
                         <select
                           onChange={(e) => {
-                            if (e.target.value) {
-                              moveEntry({
-                                licitacaoId: entry.licitacao.id,
-                                stage: e.target.value as PipelineStage,
-                              });
-                              e.target.value = "";
+                            const target = e.target;
+                            const value = target.value;
+                            if (value) {
+                              moveEntry(
+                                { licitacaoId: entry.licitacao.id, stage: value as PipelineStage },
+                                { onSettled: () => { target.value = ""; } }
+                              );
                             }
                           }}
                           className="w-full text-[11px] px-2 py-1 rounded border border-border bg-background text-muted-foreground focus:outline-none"

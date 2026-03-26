@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
-import { Plus, Calculator, ExternalLink, Clock, FileText, X } from "lucide-react";
+import { Plus, Calculator, ExternalLink, Clock, FileText, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -172,6 +172,7 @@ export function OrcamentosContent() {
           <p className="text-sm mt-1">Crie seu primeiro orçamento clicando em "Novo Orçamento"</p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {data?.items.map((orc) => (
             <Link
@@ -220,6 +221,30 @@ export function OrcamentosContent() {
             </Link>
           ))}
         </div>
+        {data && data.pages > 1 && (
+          <div className="flex items-center justify-between pt-2">
+            <p className="text-xs text-muted-foreground">
+              {(page - 1) * 20 + 1}–{Math.min(page * 20, data.total)} de {data.total}
+            </p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => p - 1)} disabled={page === 1}
+                className="p-2 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {Array.from({ length: data.pages }, (_, i) => i + 1).map(p => (
+                <button key={p} onClick={() => setPage(p)}
+                  className={cn("w-8 h-8 rounded-lg text-sm font-medium transition-colors",
+                    page === p ? "bg-primary text-white" : "hover:bg-muted")}>
+                  {p}
+                </button>
+              ))}
+              <button onClick={() => setPage(p => p + 1)} disabled={page === data.pages}
+                className="p-2 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       )}
     </div>
   );

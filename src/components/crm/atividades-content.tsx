@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Activity, FileText, CheckCircle2, Phone, Mail, Calendar, Tag } from "lucide-react";
+import { Activity, FileText, CheckCircle2, Phone, Mail, Calendar, Tag, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import Link from "next/link";
 
@@ -17,13 +18,16 @@ const TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; color:
 };
 
 export function AtividadesContent() {
-  const { data, isLoading } = trpc.crm.listActivities.useQuery({ page: 1, limit: 50 });
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = trpc.crm.listActivities.useQuery({ page, limit: 30 });
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-heading font-bold">Atividades</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">Timeline completa de atividades da equipe</p>
+        <p className="text-muted-foreground text-sm mt-0.5">
+          {data?.total ?? 0} atividades registradas pela equipe
+        </p>
       </div>
 
       {isLoading ? (
@@ -34,6 +38,7 @@ export function AtividadesContent() {
         <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground">
           <Activity className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium text-foreground text-sm">Nenhuma atividade registrada</p>
+          <p className="text-xs mt-1">As atividades aparecem conforme você interage com as licitações</p>
         </div>
       ) : (
         <div className="bg-card border border-border rounded-xl divide-y divide-border">
@@ -63,6 +68,42 @@ export function AtividadesContent() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {data && data.pages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <p className="text-muted-foreground">
+            {(page - 1) * 30 + 1}–{Math.min(page * 30, data.total)} de {data.total}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(p => p - 1)}
+              disabled={page === 1}
+              className="p-2 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {Array.from({ length: data.pages }, (_, i) => i + 1).map(p => (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className={cn(
+                  "w-8 h-8 rounded-lg text-sm font-medium transition-colors",
+                  page === p ? "bg-primary text-white" : "hover:bg-muted"
+                )}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={page === data.pages}
+              className="p-2 rounded-lg hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>

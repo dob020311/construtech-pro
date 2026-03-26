@@ -110,6 +110,7 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
       )}
       {addItemChapterId && (
         <AddItemModal
+          key={addItemChapterId}
           chapterId={addItemChapterId}
           nextOrder={(orcamento.chapters.find(c => c.id === addItemChapterId)?.items.length ?? 0) + 1}
           chapterCode={orcamento.chapters.find(c => c.id === addItemChapterId)?.code ?? ""}
@@ -442,6 +443,7 @@ function ExportModal({ orcamento, onClose }: { orcamento: OrcamentoData; onClose
   });
 
   const exportExcel = async () => {
+    try {
     const wb = XLSX.utils.book_new();
     const rows: unknown[][] = [
       ["ORÇAMENTO DE OBRA"],
@@ -467,11 +469,16 @@ function ExportModal({ orcamento, onClose }: { orcamento: OrcamentoData; onClose
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"] = [{ wch: 14 }, { wch: 50 }, { wch: 8 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
     XLSX.utils.book_append_sheet(wb, ws, "Orçamento");
-    XLSX.writeFile(wb, `${orcamento.name.replace(/\s+/g, "_")}.xlsx`);
+    const safeName = orcamento.name.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_");
+    XLSX.writeFile(wb, `${safeName}.xlsx`);
     toast.success("Excel gerado com sucesso!");
+    } catch (err) {
+      toast.error("Erro ao gerar Excel: " + (err instanceof Error ? err.message : "Tente novamente"));
+    }
   };
 
   const exportPdf = async () => {
+    try {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
 
@@ -513,8 +520,12 @@ function ExportModal({ orcamento, onClose }: { orcamento: OrcamentoData; onClose
       footStyles: { fontStyle: "bold", fillColor: [240, 245, 255] },
     });
 
-    doc.save(`${orcamento.name.replace(/\s+/g, "_")}.pdf`);
+    const safeName = orcamento.name.replace(/[^\w\s-]/g, "").replace(/\s+/g, "_");
+    doc.save(`${safeName}.pdf`);
     toast.success("PDF gerado com sucesso!");
+    } catch (err) {
+      toast.error("Erro ao gerar PDF: " + (err instanceof Error ? err.message : "Tente novamente"));
+    }
   };
 
   return (
