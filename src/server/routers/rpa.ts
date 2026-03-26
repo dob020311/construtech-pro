@@ -22,7 +22,55 @@ interface EditalFound {
   keyword: string;
 }
 
-async function searchPNCP(keyword: string, uf: string): Promise<EditalFound[]> {
+// Sample fallback data per keyword pattern (used when PNCP API is unavailable)
+const DEMO_TEMPLATES: { match: string[]; editais: Omit<EditalFound, "keyword">[] }[] = [
+  {
+    match: ["pavimentação", "pavimentacao", "asfalto", "recapeamento"],
+    editais: [
+      { title: "Contratação de empresa para pavimentação asfáltica de vias urbanas — Lote 01", organ: "Prefeitura Municipal de Feira de Santana", number: "0001234-27.2026.1.00027", modality: "Concorrência", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0001234-27.2026.1.00027", date: new Date().toISOString().slice(0, 10), value: 2850000, uf: "BA", city: "Feira de Santana" },
+      { title: "Obra de recapeamento asfáltico em vias municipais — 12 km", organ: "Prefeitura Municipal de Vitória da Conquista", number: "0002891-14.2026.1.00291", modality: "Tomada de Preços", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0002891-14.2026.1.00291", date: new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10), value: 1340000, uf: "BA", city: "Vitória da Conquista" },
+      { title: "Pavimentação com bloquetes de concreto em vias do bairro Nova Esperança", organ: "Prefeitura Municipal de Camaçari", number: "0003012-08.2026.1.00312", modality: "Pregão Eletrônico", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0003012-08.2026.1.00312", date: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10), value: 780000, uf: "BA", city: "Camaçari" },
+    ],
+  },
+  {
+    match: ["construção", "construcao", "edificação", "edificacao", "obra"],
+    editais: [
+      { title: "Construção de escola municipal com quadra esportiva coberta — 1.200 m²", organ: "Secretaria de Educação do Estado da Bahia", number: "0004501-33.2026.6.00045", modality: "Concorrência", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0004501-33.2026.6.00045", date: new Date().toISOString().slice(0, 10), value: 4200000, uf: "BA", city: "Salvador" },
+      { title: "Construção de UBS (Unidade Básica de Saúde) padrão PORTE I", organ: "Prefeitura Municipal de Ilhéus", number: "0005678-19.2026.1.00567", modality: "Tomada de Preços", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0005678-19.2026.1.00567", date: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10), value: 1950000, uf: "BA", city: "Ilhéus" },
+      { title: "Edificação de centro de convivência do idoso — obra completa", organ: "Prefeitura Municipal de Jequié", number: "0006123-44.2026.1.00612", modality: "Pregão Eletrônico", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0006123-44.2026.1.00612", date: new Date(Date.now() - 5 * 86400000).toISOString().slice(0, 10), value: 920000, uf: "BA", city: "Jequié" },
+    ],
+  },
+  {
+    match: ["reforma", "manutenção", "manutencao", "restauração", "restauracao"],
+    editais: [
+      { title: "Reforma geral e adequação de acessibilidade em prédio público municipal", organ: "Prefeitura Municipal de Porto Seguro", number: "0007234-55.2026.1.00723", modality: "Convite", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0007234-55.2026.1.00723", date: new Date().toISOString().slice(0, 10), value: 450000, uf: "BA", city: "Porto Seguro" },
+      { title: "Manutenção corretiva e preventiva da rede de drenagem pluvial urbana", organ: "Prefeitura Municipal de Lauro de Freitas", number: "0008901-62.2026.1.00890", modality: "Pregão Eletrônico", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0008901-62.2026.1.00890", date: new Date(Date.now() - 1 * 86400000).toISOString().slice(0, 10), value: 680000, uf: "BA", city: "Lauro de Freitas" },
+    ],
+  },
+  {
+    match: ["saneamento", "esgoto", "abastecimento", "água", "agua"],
+    editais: [
+      { title: "Implantação de rede coletora de esgotamento sanitário — Zona Norte", organ: "EMBASA — Empresa Baiana de Águas e Saneamento", number: "0009345-71.2026.3.00934", modality: "Concorrência", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0009345-71.2026.3.00934", date: new Date().toISOString().slice(0, 10), value: 8750000, uf: "BA", city: "Salvador" },
+      { title: "Ampliação do sistema de abastecimento de água — adutora 15 km", organ: "Prefeitura Municipal de Barreiras", number: "0010456-82.2026.1.01045", modality: "Tomada de Preços", portal: "PNCP", portalUrl: "https://pncp.gov.br/app/editais/0010456-82.2026.1.01045", date: new Date(Date.now() - 4 * 86400000).toISOString().slice(0, 10), value: 3200000, uf: "BA", city: "Barreiras" },
+    ],
+  },
+];
+
+function getFallbackEditais(keyword: string, uf: string): EditalFound[] {
+  const kw = keyword.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const matched = DEMO_TEMPLATES.find(t =>
+    t.match.some(m => kw.includes(m) || m.includes(kw))
+  );
+  const templates = matched?.editais ?? DEMO_TEMPLATES[0].editais;
+  return templates.slice(0, 3).map(e => ({
+    ...e,
+    title: `[Demo] ${e.title}`,
+    uf: uf || e.uf,
+    keyword,
+  }));
+}
+
+async function searchPNCP(keyword: string, uf: string): Promise<{ results: EditalFound[]; demo: boolean }> {
   // Try two approaches: with uf filter and without (broader search)
   const urls = [
     `https://pncp.gov.br/api/consulta/v1/contratacoes/publicacao?q=${encodeURIComponent(keyword)}&uf=${uf}&pagina=1&tamanhoPagina=10`,
@@ -33,7 +81,7 @@ async function searchPNCP(keyword: string, uf: string): Promise<EditalFound[]> {
     try {
       const res = await fetch(url, {
         headers: { Accept: "application/json", "User-Agent": "ConstruTech-Pro/1.0" },
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (!res.ok) continue;
@@ -53,36 +101,40 @@ async function searchPNCP(keyword: string, uf: string): Promise<EditalFound[]> {
 
       if (items.length === 0) continue;
 
-      return items.map((item) => {
-        const i = item as Record<string, unknown>;
-        const orgao = i.orgaoEntidade as Record<string, unknown> | undefined;
-        const unidade = i.unidadeOrgao as Record<string, unknown> | undefined;
-        const link = (i.linkSistemaOrigem as string | undefined) ?? null;
-        const numCtrl = (i.numeroControlePncp as string | undefined) ?? "";
-        const pncpLink = numCtrl
-          ? `https://pncp.gov.br/app/editais/${numCtrl.replace(/\//g, "-")}`
-          : link;
+      return {
+        demo: false,
+        results: items.map((item) => {
+          const i = item as Record<string, unknown>;
+          const orgao = i.orgaoEntidade as Record<string, unknown> | undefined;
+          const unidade = i.unidadeOrgao as Record<string, unknown> | undefined;
+          const link = (i.linkSistemaOrigem as string | undefined) ?? null;
+          const numCtrl = (i.numeroControlePncp as string | undefined) ?? "";
+          const pncpLink = numCtrl
+            ? `https://pncp.gov.br/app/editais/${numCtrl.replace(/\//g, "-")}`
+            : link;
 
-        return {
-          title: (i.objetoCompra as string | undefined) ?? "Sem descrição",
-          organ: (orgao?.razaoSocial as string | undefined) ?? "Órgão não informado",
-          number: numCtrl,
-          modality: (i.modalidadeNome as string | undefined) ?? "Não informada",
-          portal: "PNCP",
-          portalUrl: pncpLink,
-          date: ((i.dataPublicacaoPncp as string | undefined) ?? new Date().toISOString()).slice(0, 10),
-          value: (i.valorTotalEstimado as number | undefined) ?? null,
-          uf: (unidade?.ufSigla as string | undefined) ?? uf,
-          city: (unidade?.municipioNome as string | undefined) ?? "",
-          keyword,
-        };
-      });
+          return {
+            title: (i.objetoCompra as string | undefined) ?? "Sem descrição",
+            organ: (orgao?.razaoSocial as string | undefined) ?? "Órgão não informado",
+            number: numCtrl,
+            modality: (i.modalidadeNome as string | undefined) ?? "Não informada",
+            portal: "PNCP",
+            portalUrl: pncpLink,
+            date: ((i.dataPublicacaoPncp as string | undefined) ?? new Date().toISOString()).slice(0, 10),
+            value: (i.valorTotalEstimado as number | undefined) ?? null,
+            uf: (unidade?.ufSigla as string | undefined) ?? uf,
+            city: (unidade?.municipioNome as string | undefined) ?? "",
+            keyword,
+          };
+        }),
+      };
     } catch {
       continue;
     }
   }
 
-  return [];
+  // API unavailable — return demo data
+  return { results: getFallbackEditais(keyword, uf), demo: true };
 }
 
 async function searchComprasGov(keyword: string, uf: string): Promise<EditalFound[]> {
@@ -231,12 +283,14 @@ export const rpaRouter = createTRPCRouter({
           } else {
             const allEditais: EditalFound[] = [];
             const errors: string[] = [];
+            let usedDemo = false;
 
             for (const keyword of keywords.slice(0, 5)) {
               if (portals.includes("PNCP")) {
                 try {
-                  const results = await searchPNCP(keyword, uf);
+                  const { results, demo } = await searchPNCP(keyword, uf);
                   allEditais.push(...results);
+                  if (demo) usedDemo = true;
                 } catch {
                   errors.push("PNCP indisponível");
                 }
@@ -270,8 +324,9 @@ export const rpaRouter = createTRPCRouter({
             itemsFound = unique.length;
             const uniqueErrors = errors.filter((e, i, a) => a.indexOf(e) === i);
             const errNote = uniqueErrors.length > 0 ? ` (${uniqueErrors.join("; ")})` : "";
-            message = `${unique.length} edital(is) encontrado(s) para: ${keywords.join(", ")} — ${uf}${errNote}`;
-            details = { editais: unique, portals, keywords, uf };
+            const demoNote = usedDemo ? " [dados de demonstração — PNCP indisponível no momento]" : "";
+            message = `${unique.length} edital(is) encontrado(s) para: ${keywords.join(", ")} — ${uf}${errNote}${demoNote}`;
+            details = { editais: unique, portals, keywords, uf, demo: usedDemo };
           }
 
         /* ── PRICE_UPDATE ── */
