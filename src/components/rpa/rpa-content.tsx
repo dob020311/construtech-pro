@@ -290,12 +290,20 @@ function JobModal({
           )}
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Agendamento (cron)</label>
-            <input value={schedule} onChange={e => setSchedule(e.target.value)}
-              placeholder="0 6 * * *"
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Agendamento automático</label>
+            <select
+              value={schedule}
+              onChange={e => setSchedule(e.target.value)}
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30">
+              <option value="">Sem agendamento (manual)</option>
+              <option value="0 7 * * *">Todo dia às 7h (recomendado)</option>
+              <option value="0 6 * * 1">Toda segunda-feira às 6h</option>
+              <option value="0 7 * * 1,3,5">Segunda, quarta e sexta às 7h</option>
+              <option value="0 8 1 * *">Todo dia 1º do mês às 8h</option>
+              <option value="daily">Diário (qualquer horário)</option>
+            </select>
             <p className="text-[11px] text-muted-foreground mt-1">
-              <code>0 6 * * *</code> = 6h diário · <code>0 8 * * 1</code> = segunda às 8h
+              O agente será executado automaticamente pela plataforma no horário configurado.
             </p>
           </div>
         </div>
@@ -398,7 +406,17 @@ function JobCard({ job }: {
 
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            {job.schedule && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{job.schedule}</span>}
+            {job.schedule && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {job.schedule === "0 7 * * *" ? "Diário 7h" :
+                 job.schedule === "0 6 * * 1" ? "Seg 6h" :
+                 job.schedule === "0 7 * * 1,3,5" ? "Seg/Qua/Sex 7h" :
+                 job.schedule === "0 8 1 * *" ? "Dia 1 às 8h" :
+                 job.schedule === "daily" ? "Diário" :
+                 job.schedule}
+              </span>
+            )}
             {job.lastRunAt && (
               <span className={cn("flex items-center gap-1",
                 job.lastRunStatus === "SUCCESS" ? "text-emerald-600" :
