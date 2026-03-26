@@ -7,6 +7,66 @@ import {
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+function downloadTemplate(t: Template) {
+  const content = [
+    "=".repeat(60),
+    `CONSTRUTECH PRO — TEMPLATE DE DOCUMENTO`,
+    "=".repeat(60),
+    "",
+    `Título: ${t.title}`,
+    `Categoria: ${t.category}`,
+    `Referência Legal: ${t.lei}`,
+    `Páginas estimadas: ${t.pages}`,
+    `Tags: ${t.tags.join(", ")}`,
+    "",
+    "-".repeat(60),
+    "DESCRIÇÃO",
+    "-".repeat(60),
+    t.description,
+    "",
+    "-".repeat(60),
+    "MODELO DO DOCUMENTO",
+    "-".repeat(60),
+    "",
+    "[RAZÃO SOCIAL DA EMPRESA]",
+    "CNPJ: ___.___.___/____-__",
+    "Endereço: _______________________________________",
+    "Telefone: (__)________-____  E-mail: ____________",
+    "",
+    `À [NOME DO ÓRGÃO LICITANTE]`,
+    `Ref.: ${t.title}`,
+    `Edital/Processo nº: ____________ — ____________`,
+    "",
+    `Conforme ${t.lei}, a empresa [RAZÃO SOCIAL], por`,
+    "seu representante legal abaixo assinado, vem respeitosamente:",
+    "",
+    "[CONTEÚDO ESPECÍFICO DO DOCUMENTO]",
+    "",
+    "____________________________________________",
+    "[Local], __ de ____________ de 20__.",
+    "",
+    "____________________________________________",
+    "[Nome do Representante Legal]",
+    "[Cargo]",
+    "[CPF: ___.___.___-__]",
+    "",
+    "=".repeat(60),
+    "Documento gerado pelo ConstruTech Pro",
+    `www.construtech.pro — ${new Date().toLocaleDateString("pt-BR")}`,
+    "=".repeat(60),
+  ].join("\n");
+
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${t.title.replace(/[^a-zA-Z0-9\s]/g, "").replace(/\s+/g, "-").toLowerCase()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 interface Template {
   id: string;
   title: string;
@@ -284,7 +344,10 @@ function TemplateCard({
             <Eye className="w-3.5 h-3.5" />
             Pré-visualizar
           </button>
-          <button className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors">
+          <button
+            onClick={() => downloadTemplate(t)}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+          >
             <Download className="w-3.5 h-3.5" />
             Baixar
           </button>
@@ -351,7 +414,10 @@ function PreviewModal({ template: t, onClose }: { template: Template; onClose: (
           >
             Fechar
           </button>
-          <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">
+          <button
+            onClick={() => downloadTemplate(t)}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
             <Download className="w-4 h-4" />
             Baixar Template
           </button>

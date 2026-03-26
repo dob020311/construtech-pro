@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useState } from "react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /* ── Status config ─────────────────────────────────────────────── */
 const STATUS_LABELS: Record<string, string> = {
@@ -63,6 +65,54 @@ function CustomTooltip({ active, payload, label }: any) {
 /* ── Main Component ────────────────────────────────────────────── */
 export function RelatoriosContent() {
   const [months, setMonths] = useState<6 | 12>(6);
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    const now = new Date().toLocaleDateString("pt-BR");
+    doc.setFontSize(16);
+    doc.text("ConstruTech Pro — Relatório de Desempenho", 14, 18);
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text(`Gerado em ${now}`, 14, 25);
+    doc.setTextColor(0);
+
+    autoTable(doc, {
+      startY: 32,
+      head: [["Indicador", "Valor"]],
+      body: [
+        ["Licitações ativas", String(stats?.totalActive ?? 0)],
+        ["Pipeline (valor)", formatCurrency(stats?.pipelineValue ?? 0)],
+        ["Taxa de conversão", `${taxaConversao}%`],
+        ["Ganhas / Perdidas", `${ganhou} / ${perdeu}`],
+        ["Pipeline orçamentos", formatCurrency(pipelineTotal)],
+        ["Documentos com atenção", String((docStats?.expiring ?? 0) + (docStats?.expired ?? 0))],
+      ],
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [37, 99, 235] },
+    });
+
+    if ((stats?.byStatus?.length ?? 0) > 0) {
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [["Status", "Qtd"]],
+        body: (stats?.byStatus ?? []).map(s => [STATUS_LABELS[s.status] ?? s.status, String(s._count)]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [37, 99, 235] },
+      });
+    }
+
+    if (topOrc.length > 0) {
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [["Orçamento", "Valor com BDI"]],
+        body: topOrc.map(o => [o.name, formatCurrency(o.valor)]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [37, 99, 235] },
+      });
+    }
+
+    doc.save(`relatorio-construtech-${now.replace(/\//g, "-")}.pdf`);
+  };
 
   const { data: stats, isLoading: loadingStats } = trpc.licitacao.getStats.useQuery();
   const { data: trend, isLoading: loadingTrend } = trpc.licitacao.getMonthlyTrend.useQuery({ months });
@@ -117,9 +167,12 @@ export function RelatoriosContent() {
               </button>
             ))}
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors">
+          <button
+            onClick={exportPDF}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors"
+          >
             <Download className="w-4 h-4" />
-            Exportar
+            Exportar PDF
           </button>
         </div>
       </div>

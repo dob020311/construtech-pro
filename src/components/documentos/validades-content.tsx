@@ -1,9 +1,72 @@
 "use client";
 
 import { trpc } from "@/lib/trpc";
-import { AlertTriangle, CheckCircle2, Clock, XCircle, Bell, Calendar } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, XCircle, Bell, Calendar, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface AlertPrefs { days30: boolean; days60: boolean; days90: boolean; email: boolean }
+
+function AlertModal({ onClose }: { onClose: () => void }) {
+  const [prefs, setPrefs] = useState<AlertPrefs>({ days30: true, days60: true, days90: false, email: false });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("docAlertPrefs");
+      if (saved) setPrefs(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  const save = () => {
+    localStorage.setItem("docAlertPrefs", JSON.stringify(prefs));
+    onClose();
+  };
+
+  const toggle = (k: keyof AlertPrefs) => setPrefs(p => ({ ...p, [k]: !p[k] }));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-background border border-border rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-primary" />
+            <h2 className="font-heading font-semibold text-sm">Configurar Alertas</h2>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-muted-foreground">Receba alertas quando documentos estiverem prestes a vencer:</p>
+          <div className="space-y-3">
+            {([
+              { key: "days30", label: "30 dias antes do vencimento" },
+              { key: "days60", label: "60 dias antes do vencimento" },
+              { key: "days90", label: "90 dias antes do vencimento" },
+              { key: "email", label: "Notificar também por e-mail" },
+            ] as { key: keyof AlertPrefs; label: string }[]).map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-3 cursor-pointer">
+                <div
+                  onClick={() => toggle(key)}
+                  className={cn(
+                    "w-10 h-5 rounded-full transition-colors flex items-center px-0.5 cursor-pointer",
+                    prefs[key] ? "bg-primary" : "bg-muted"
+                  )}
+                >
+                  <div className={cn("w-4 h-4 rounded-full bg-white shadow transition-transform", prefs[key] ? "translate-x-5" : "translate-x-0")} />
+                </div>
+                <span className="text-sm text-foreground">{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-3 p-5 border-t border-border">
+          <button onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors">Cancelar</button>
+          <button onClick={save} className="flex-1 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors">Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   CNPJ: "CNPJ",
@@ -27,6 +90,7 @@ const STATUS_CONFIG = {
 
 export function ValidadesContent() {
   const [filter, setFilter] = useState<"ALL" | "EXPIRING" | "EXPIRED" | "VALID">("ALL");
+  const [showAlerts, setShowAlerts] = useState(false);
 
   const { data: expiring, isLoading: loadingExp } = trpc.documento.getExpiringDocuments.useQuery();
   const { data: stats } = trpc.documento.getDocumentStats.useQuery();
@@ -52,10 +116,14 @@ export function ValidadesContent() {
             Controle de vencimento de certidões e documentos habilitatórios
           </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors">
+        <button
+          onClick={() => setShowAlerts(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground hover:bg-muted transition-colors"
+        >
           <Bell className="w-4 h-4" />
           Configurar alertas
         </button>
+        {showAlerts && <AlertModal onClose={() => setShowAlerts(false)} />}
       </div>
 
       {/* Stats */}
