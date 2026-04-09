@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
 import {
   ArrowLeft, Calendar, Building2, FileText, DollarSign, Tag,
-  Clock, CheckCircle2, XCircle, Edit2, ExternalLink, User, Activity
+  Clock, CheckCircle2, XCircle, Edit2, ExternalLink, User, Activity,
+  Upload, Cpu, AlertTriangle, ChevronDown, ChevronRight, Loader2,
+  FileCheck, Star, Shield, Wrench, Wallet, ClipboardList, Package,
 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
@@ -56,10 +58,86 @@ const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
 
 const STATUS_OPTIONS = Object.entries(STATUS_LABELS) as [LicitacaoStatus, string][];
 
+interface DocItem { nome: string; obrigatorio: boolean; observacao?: string; }
+interface DocCategoria { categoria: string; descricao?: string; itens: DocItem[]; }
+interface Prazo { nome: string; data: string; descricao?: string; }
+interface EditalAnalysis {
+  resumo: string; objeto?: string; orgao?: string; modalidade?: string;
+  valorEstimado?: number; criterioJulgamento?: string;
+  prazos: Prazo[]; documentos: DocCategoria[];
+  requisitosEspecificos: string[]; pontosCriticos: string[]; pontuacao?: number;
+}
+
+const CAT_ICONS: Record<string, React.ReactNode> = {
+  "Habilitação Jurídica": <Shield className="w-4 h-4" />,
+  "Regularidade Fiscal e Trabalhista": <FileCheck className="w-4 h-4" />,
+  "Qualificação Técnica": <Wrench className="w-4 h-4" />,
+  "Qualificação Econômico-Financeira": <Wallet className="w-4 h-4" />,
+  "Declarações e Formulários": <ClipboardList className="w-4 h-4" />,
+  "Proposta Comercial": <Package className="w-4 h-4" />,
+};
+
 export function LicitacaoDetalhe({ id }: { id: string }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"overview" | "orcamentos" | "atividades">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "orcamentos" | "atividades" | "analise">("overview");
   const [changingStatus, setChangingStatus] = useState(false);
+
+  // Edital analysis state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<EditalAnalysis | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.type === "application/pdf" || file.name.endsWith(".pdf"))) {
+      setSelectedFile(file);
+      setAnalysisError(null);
+    } else {
+      toast.error("Apenas arquivos PDF são suportados");
+    }
+  }, []);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) { setSelectedFile(file); setAnalysisError(null); }
+  };
+
+  const handleAnalyze = async () => {
+    if (!selectedFile) return;
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+    setAnalysisResult(null);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+    formData.append("licitacaoId", id);
+
+    try {
+      const res = await fetch("/api/licitacao/analyze-edital", { method: "POST", body: formData });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao analisar edital");
+      setAnalysisResult(json.analysis as EditalAnalysis);
+      // Open first category by default
+      if (json.analysis?.documentos?.[0]?.categoria) {
+        setOpenCategories({ [json.analysis.documentos[0].categoria]: true });
+      }
+      refetch();
+      toast.success("Edital analisado com sucesso!");
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const toggleCategory = (cat: string) =>
+    setOpenCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
 
   const { data: licitacao, isLoading, refetch } = trpc.licitacao.getById.useQuery({ id });
   const utils = trpc.useUtils();
@@ -177,16 +255,19 @@ export function LicitacaoDetalhe({ id }: { id: string }) {
 
       {/* Tabs */}
       <div className="border-b border-border">
-        <nav className="flex gap-1 -mb-px">
-          {(["overview", "orcamentos", "atividades"] as const).map((tab) => (
+        <nav className="flex gap-1 -mb-px overflow-x-auto">
+          {(["overview", "orcamentos", "atividades", "analise"] as const).map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={cn(
-                "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors capitalize",
+                "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5",
                 activeTab === tab
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               )}>
-              {tab === "overview" ? "Visão Geral" : tab === "orcamentos" ? "Orçamentos" : "Atividades"}
+              {tab === "overview" ? "Visão Geral"
+                : tab === "orcamentos" ? "Orçamentos"
+                : tab === "atividades" ? "Atividades"
+                : <><Cpu className="w-3.5 h-3.5" />Análise IA</>}
             </button>
           ))}
         </nav>
@@ -294,6 +375,216 @@ export function LicitacaoDetalhe({ id }: { id: string }) {
                 </div>
               </Link>
             ))
+          )}
+        </div>
+      )}
+
+      {activeTab === "analise" && (
+        <div className="space-y-5">
+          {/* Upload area */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h3 className="font-heading font-semibold text-sm mb-1 flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-primary" />Análise Automática de Edital
+            </h3>
+            <p className="text-xs text-muted-foreground mb-4">Envie o PDF do edital e a IA identificará todos os documentos exigidos, prazos e pontos críticos.</p>
+
+            {/* Dropzone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={cn(
+                "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
+                isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/40"
+              )}>
+              <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handleFileSelect} />
+              <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              {selectedFile ? (
+                <div>
+                  <p className="font-medium text-sm">{selectedFile.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB · clique para trocar</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium">Arraste o PDF do edital ou clique para selecionar</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Apenas PDF · máx 20 MB</p>
+                </div>
+              )}
+            </div>
+
+            {analysisError && (
+              <div className="mt-3 flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span>{analysisError}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleAnalyze}
+              disabled={!selectedFile || isAnalyzing}
+              className={cn(
+                "mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                selectedFile && !isAnalyzing
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground cursor-not-allowed"
+              )}>
+              {isAnalyzing ? (
+                <><Loader2 className="w-4 h-4 animate-spin" />Analisando edital... pode levar até 60s</>
+              ) : (
+                <><Cpu className="w-4 h-4" />Analisar Edital com IA</>
+              )}
+            </button>
+          </div>
+
+          {/* Existing saved analysis notice */}
+          {!analysisResult && licitacao.aiSummary && (
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 text-sm">
+              <p className="font-medium text-primary flex items-center gap-1.5 mb-1"><Cpu className="w-3.5 h-3.5" />Análise anterior disponível</p>
+              <p className="text-muted-foreground">{licitacao.aiSummary}</p>
+              {licitacao.aiScore && (
+                <span className="inline-flex items-center gap-1 mt-2 text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                  <Star className="w-3 h-3" />Score {(licitacao.aiScore * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Analysis results */}
+          {analysisResult && (
+            <div className="space-y-4">
+              {/* Summary + score */}
+              <div className="bg-card border border-primary/20 rounded-xl p-5">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <h3 className="font-heading font-semibold text-sm text-primary flex items-center gap-2">
+                    <Cpu className="w-4 h-4" />Resumo Executivo
+                  </h3>
+                  {analysisResult.pontuacao !== undefined && (
+                    <span className={cn(
+                      "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0",
+                      analysisResult.pontuacao >= 70 ? "bg-green-100 text-green-700" :
+                      analysisResult.pontuacao >= 40 ? "bg-amber-100 text-amber-700" :
+                      "bg-red-100 text-red-700"
+                    )}>
+                      <Star className="w-3 h-3" />Score {analysisResult.pontuacao}/100
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground leading-relaxed">{analysisResult.resumo}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  {analysisResult.orgao && <div><span className="text-muted-foreground">Órgão: </span><span className="font-medium">{analysisResult.orgao}</span></div>}
+                  {analysisResult.modalidade && <div><span className="text-muted-foreground">Modalidade: </span><span className="font-medium">{analysisResult.modalidade}</span></div>}
+                  {analysisResult.criterioJulgamento && <div><span className="text-muted-foreground">Critério: </span><span className="font-medium">{analysisResult.criterioJulgamento}</span></div>}
+                  {analysisResult.valorEstimado ? <div><span className="text-muted-foreground">Valor: </span><span className="font-medium">{formatCurrency(analysisResult.valorEstimado)}</span></div> : null}
+                </div>
+              </div>
+
+              {/* Prazos */}
+              {analysisResult.prazos?.length > 0 && (
+                <div className="bg-card border border-border rounded-xl p-5">
+                  <h3 className="font-heading font-semibold text-sm mb-3 flex items-center gap-2"><Calendar className="w-4 h-4" />Prazos</h3>
+                  <div className="space-y-2">
+                    {analysisResult.prazos.map((p, i) => (
+                      <div key={i} className="flex items-start justify-between gap-2 text-sm py-1.5 border-b border-border last:border-0">
+                        <div>
+                          <p className="font-medium">{p.nome}</p>
+                          {p.descricao && <p className="text-xs text-muted-foreground mt-0.5">{p.descricao}</p>}
+                        </div>
+                        <span className="text-xs font-mono bg-muted px-2 py-0.5 rounded flex-shrink-0">{p.data}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Documents by category */}
+              {analysisResult.documentos?.length > 0 && (
+                <div className="bg-card border border-border rounded-xl overflow-hidden">
+                  <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+                    <h3 className="font-heading font-semibold text-sm flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Documentos Exigidos
+                    </h3>
+                    <span className="text-xs text-muted-foreground">
+                      {analysisResult.documentos.reduce((s, c) => s + c.itens.length, 0)} documentos · {analysisResult.documentos.length} categorias
+                    </span>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {analysisResult.documentos.map((cat) => (
+                      <div key={cat.categoria}>
+                        <button
+                          onClick={() => toggleCategory(cat.categoria)}
+                          className="w-full flex items-center justify-between px-5 py-3 hover:bg-muted/40 transition-colors text-left">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-muted-foreground">{CAT_ICONS[cat.categoria] ?? <FileText className="w-4 h-4" />}</span>
+                            <div>
+                              <p className="text-sm font-medium">{cat.categoria}</p>
+                              {cat.descricao && <p className="text-xs text-muted-foreground">{cat.descricao}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{cat.itens.length}</span>
+                            {openCategories[cat.categoria]
+                              ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                              : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                          </div>
+                        </button>
+                        {openCategories[cat.categoria] && cat.itens.length > 0 && (
+                          <div className="px-5 pb-3 space-y-1.5 bg-muted/20">
+                            {cat.itens.map((item, i) => (
+                              <div key={i} className="flex items-start gap-2.5 py-1.5">
+                                <div className={cn("w-2 h-2 rounded-full flex-shrink-0 mt-1.5", item.obrigatorio ? "bg-red-400" : "bg-amber-400")} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm">{item.nome}</p>
+                                  {item.observacao && <p className="text-xs text-muted-foreground mt-0.5">{item.observacao}</p>}
+                                </div>
+                                <span className={cn("text-xs px-1.5 py-0.5 rounded flex-shrink-0", item.obrigatorio ? "bg-red-100 text-red-600" : "bg-amber-100 text-amber-600")}>
+                                  {item.obrigatorio ? "Obrigatório" : "Opcional"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Requisitos específicos */}
+              {analysisResult.requisitosEspecificos?.length > 0 && (
+                <div className="bg-card border border-amber-200 rounded-xl p-5">
+                  <h3 className="font-heading font-semibold text-sm mb-3 flex items-center gap-2 text-amber-700">
+                    <Star className="w-4 h-4" />Requisitos Específicos
+                  </h3>
+                  <ul className="space-y-1.5">
+                    {analysisResult.requisitosEspecificos.map((r, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <ChevronRight className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                        <span>{r}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Pontos críticos */}
+              {analysisResult.pontosCriticos?.length > 0 && (
+                <div className="bg-card border border-red-200 rounded-xl p-5">
+                  <h3 className="font-heading font-semibold text-sm mb-3 flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-4 h-4" />Pontos Críticos
+                  </h3>
+                  <ul className="space-y-1.5">
+                    {analysisResult.pontosCriticos.map((p, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0 mt-0.5" />
+                        <span>{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -32,11 +32,20 @@ export default function RegistroPage() {
   });
 
   async function onSubmit(data: FormData) {
-    // In production, this would call a registration API
-    await new Promise((r) => setTimeout(r, 1000));
-    toast.success("Solicitação enviada! Entraremos em contato em breve.");
+    const res = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    const json = await res.json() as { error?: string; success?: boolean };
+
+    if (!res.ok) {
+      toast.error(json.error ?? "Erro ao criar conta. Tente novamente.");
+      return;
+    }
+
     setSubmitted(true);
-    console.log("Registration data:", data);
   }
 
   if (submitted) {
@@ -46,9 +55,9 @@ export default function RegistroPage() {
           <div className="w-16 h-16 bg-success/10 text-success rounded-full flex items-center justify-center mx-auto mb-4">
             <Building2 className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-heading font-bold mb-2">Solicitação enviada!</h2>
+          <h2 className="text-2xl font-heading font-bold mb-2">Conta criada com sucesso!</h2>
           <p className="text-muted-foreground mb-6">
-            Nossa equipe analisará sua solicitação e entrará em contato em até 24h.
+            Enviamos um link de confirmação para o seu e-mail. Clique no link para ativar sua conta.
           </p>
           <Link href="/login" className="text-primary font-medium hover:underline">
             Voltar ao login

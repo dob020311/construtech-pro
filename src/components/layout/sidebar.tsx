@@ -16,6 +16,13 @@ import {
   ChevronRight,
   Building2,
   Zap,
+  GraduationCap,
+  Ruler,
+  CalendarDays,
+  BookOpen,
+  ShoppingCart,
+  Puzzle,
+  Database,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -34,6 +41,23 @@ const navItems = [
     label: "Orçamentos",
     href: "/orcamentos",
     icon: Calculator,
+    children: [
+      { label: "Orçamentos", href: "/orcamentos" },
+      { label: "Medição", href: "/medicao" },
+      { label: "Planejamento", href: "/planejamento" },
+      { label: "Compras", href: "/compras" },
+      { label: "Bases de Preços", href: "/bases" },
+    ],
+  },
+  {
+    label: "Diário de Obras",
+    href: "/diario-obra",
+    icon: BookOpen,
+  },
+  {
+    label: "CDE",
+    href: "/cde",
+    icon: FolderOpen,
   },
   {
     label: "CRM",
@@ -67,9 +91,19 @@ const navItems = [
     icon: BarChart3,
   },
   {
+    label: "Plugins & BIM",
+    href: "/plugins",
+    icon: Puzzle,
+  },
+  {
     label: "Configurações",
     href: "/configuracoes",
     icon: Settings,
+  },
+  {
+    label: "Treinamento",
+    href: "/treinamento",
+    icon: GraduationCap,
   },
 ];
 

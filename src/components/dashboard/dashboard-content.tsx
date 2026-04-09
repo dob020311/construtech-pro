@@ -18,6 +18,7 @@ import {
   Upload,
   Bot,
   ArrowRight,
+  BarChart3,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -133,6 +134,72 @@ function OnboardingBanner({ totalLicitacoes }: { totalLicitacoes: number }) {
   );
 }
 
+function OrcamentoDashboard() {
+  const { data: orc, isLoading } = trpc.orcamento.getDashboardStats.useQuery();
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-border bg-card p-5 space-y-3 animate-pulse">
+        <div className="h-4 w-40 bg-muted rounded" />
+        <div className="space-y-2">
+          {[1,2,3,4,5].map(i => <div key={i} className="h-5 bg-muted rounded" />)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4 text-primary" />
+          <span className="text-sm font-semibold text-foreground">Curva ABC — Orçamentos</span>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-muted-foreground">{orc?.totalOrcamentos ?? 0} orçamentos</p>
+          <p className="text-xs font-semibold text-primary">
+            R$ {(orc?.totalValorBdi ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </div>
+      </div>
+
+      {!orc?.curvaABC.length ? (
+        <p className="text-xs text-muted-foreground text-center py-4">Nenhum item cadastrado</p>
+      ) : (
+        <div className="space-y-2">
+          {orc.curvaABC.map((item, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <span className={`text-[10px] font-bold w-4 flex-shrink-0 ${
+                item.classe === "A" ? "text-red-400" :
+                item.classe === "B" ? "text-amber-400" : "text-emerald-400"
+              }`}>{item.classe}</span>
+              <span className="text-xs text-muted-foreground flex-1 truncate">{item.description}</span>
+              <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden flex-shrink-0">
+                <div
+                  className={`h-full rounded-full ${item.classe === "A" ? "bg-red-400" : item.classe === "B" ? "bg-amber-400" : "bg-emerald-400"}`}
+                  style={{ width: `${Math.min(item.pct * 3, 100)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground w-10 text-right flex-shrink-0">
+                {item.pct.toFixed(1)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-3 pt-1 border-t border-border">
+        {(["A", "B", "C"] as const).map((cls) => (
+          <div key={cls} className="flex items-center gap-1.5">
+            <div className={`w-2 h-2 rounded-full ${cls === "A" ? "bg-red-400" : cls === "B" ? "bg-amber-400" : "bg-emerald-400"}`} />
+            <span className="text-[10px] text-muted-foreground">Classe {cls}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DashboardContent() {
   const { data: stats, isLoading: statsLoading } = trpc.licitacao.getStats.useQuery();
   const { data: deadlines, isLoading: deadlinesLoading } =
@@ -211,6 +278,13 @@ export function DashboardContent() {
         {/* Document status */}
         <div>
           <DocumentStatusWidget stats={docStats} loading={docStatsLoading} />
+        </div>
+      </div>
+
+      {/* Orçamentos row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <OrcamentoDashboard />
         </div>
       </div>
     </div>

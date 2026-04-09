@@ -36,7 +36,7 @@ export const PLANS = {
   STARTER: {
     id: "starter",
     name: "Starter",
-    price: 19700, // R$ 197,00 em centavos
+    price: 6900, // R$ 69,00 em centavos
     priceId: process.env.STRIPE_PRICE_STARTER ?? null,
     limits: {
       licitacoes: 50,
@@ -57,7 +57,7 @@ export const PLANS = {
   PRO: {
     id: "pro",
     name: "Pro",
-    price: 39700, // R$ 397,00 em centavos
+    price: 9900, // R$ 99,00 em centavos
     priceId: process.env.STRIPE_PRICE_PRO ?? null,
     limits: {
       licitacoes: -1, // ilimitado

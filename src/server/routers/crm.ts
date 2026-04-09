@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { PipelineStage } from "@prisma/client";
 
@@ -54,6 +55,12 @@ export const crmRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Verify ownership before moving
+      const licitacao = await ctx.prisma.licitacao.findFirst({
+        where: { id: input.licitacaoId, companyId: ctx.session.user.companyId },
+      });
+      if (!licitacao) throw new TRPCError({ code: "NOT_FOUND", message: "Licitação não encontrada" });
+
       return ctx.prisma.pipelineEntry.upsert({
         where: { licitacaoId: input.licitacaoId },
         update: { stage: input.stage, ...(input.probability !== undefined && { probability: input.probability }) },

@@ -33,8 +33,8 @@ const JOB_TYPE_META = {
     bg: "bg-emerald-50 dark:bg-emerald-950/30",
   },
   PRICE_UPDATE: {
-    label: "Atualização de Preços SINAPI",
-    desc: "Consulta tabela SINAPI/SICRO e atualiza referências de preços.",
+    label: "Atualização de Preços SINAPI/ORSE-SE/SEINFRA",
+    desc: "Consulta tabelas SINAPI, SICRO, ORSE-SE e SEINFRA e atualiza referências de preços.",
     icon: DollarSign,
     color: "text-orange-600",
     bg: "bg-orange-50 dark:bg-orange-950/30",

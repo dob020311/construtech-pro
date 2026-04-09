@@ -14,7 +14,10 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "check:env": "tsx scripts/check-env.ts",
+    "check:env:prod": "tsx scripts/check-env.ts .env.production",
+    "stripe:setup": "tsx scripts/create-stripe-products.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Settings, BarChart3,
   Download, Loader2, X, FileSpreadsheet, FileText, Sparkles, Send,
+  Cpu, Package, HardHat, Wrench, ChevronLeft,
+  Upload, Mic, MicOff, MessageSquare, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -23,13 +26,55 @@ interface OrcamentoData {
 }
 
 export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
+  const router = useRouter();
   const [expandedChapters, setExpandedChapters] = useState<string[]>([]);
   const [showBdiModal, setShowBdiModal] = useState(false);
   const [showCurvaAbc, setShowCurvaAbc] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showAddChapter, setShowAddChapter] = useState(false);
   const [addItemChapterId, setAddItemChapterId] = useState<string | null>(null);
+  const [aiCompositionChapterId, setAiCompositionChapterId] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showAiCommand, setShowAiCommand] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleExportExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const res = await fetch("/api/orcamento/export-excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orcamentoId: id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? "Erro ao exportar");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? "Orcamento.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Excel exportado!");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao exportar Excel");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
   const utils = trpc.useUtils();
+
+  const deleteOrcamento = trpc.orcamento.delete.useMutation({
+    onSuccess: () => { toast.success("Orçamento excluído"); router.push("/orcamentos"); },
+    onError: (err) => toast.error(err.message),
+  });
 
   const { data: orcamento, isLoading } = trpc.orcamento.getById.useQuery({ id });
 
@@ -58,6 +103,16 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
   });
 
   const { data: curvaAbc } = trpc.orcamento.getCurvaAbc.useQuery({ id }, { enabled: showCurvaAbc });
+
+  const { mutate: addItemWithComposition, isPending: isAddingWithAi } = trpc.orcamento.addItemWithComposition.useMutation({
+    onSuccess: () => { utils.orcamento.getById.invalidate({ id }); setAiCompositionChapterId(null); toast.success("Item com composição adicionado!"); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const { mutate: aiCommand, isPending: isRunningCommand } = trpc.orcamento.aiCommand.useMutation({
+    onSuccess: (data) => { utils.orcamento.getById.invalidate({ id }); return data; },
+    onError: (err) => toast.error(err.message),
+  });
 
   const toggleChapter = (chapterId: string) => {
     setExpandedChapters((prev) =>
@@ -119,6 +174,51 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
           isPending={isAddingItem}
         />
       )}
+      {aiCompositionChapterId && (
+        <AiCompositionModal
+          chapterId={aiCompositionChapterId}
+          onSave={(data) => addItemWithComposition({ ...data, chapterId: aiCompositionChapterId })}
+          onClose={() => setAiCompositionChapterId(null)}
+          isPending={isAddingWithAi}
+        />
+      )}
+      {showImportModal && (
+        <ImportPlanilhaModal
+          orcamentoId={id}
+          onSuccess={() => { utils.orcamento.getById.invalidate({ id }); setShowImportModal(false); }}
+          onClose={() => setShowImportModal(false)}
+        />
+      )}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowDeleteConfirm(false)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-heading font-bold">Excluir orçamento</h2>
+                <p className="text-xs text-muted-foreground">Esta ação não pode ser desfeita</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Tem certeza que deseja excluir <span className="font-semibold text-foreground">"{orcamento.name}"</span>?
+              Todos os capítulos e itens serão removidos permanentemente.
+            </p>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteOrcamento.isPending}
+                className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+                Cancelar
+              </button>
+              <button type="button" onClick={() => deleteOrcamento.mutate({ id })} disabled={deleteOrcamento.isPending}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50">
+                {deleteOrcamento.isPending ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between">
@@ -130,7 +230,21 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-400 transition-colors">
+            <Upload className="w-3.5 h-3.5" /> Importar Planilha
+          </button>
+          <button onClick={handleExportExcel} disabled={isExportingExcel}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+            {isExportingExcel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+            Exportar Excel
+          </button>
+          <button onClick={() => setShowAiCommand(!showAiCommand)}
+            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors",
+              showAiCommand ? "border-indigo-400 bg-indigo-600 text-white" : "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-700 dark:text-indigo-400")}>
+            <MessageSquare className="w-3.5 h-3.5" /> Assistente IA
+          </button>
           <button onClick={() => setShowExport(true)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border hover:bg-muted transition-colors">
             <Download className="w-3.5 h-3.5" /> Exportar / IA
@@ -140,11 +254,24 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
             <Settings className="w-3.5 h-3.5" /> BDI
           </button>
           <button onClick={() => setShowCurvaAbc(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary-700 transition-colors">
+            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
             <BarChart3 className="w-3.5 h-3.5" /> Curva ABC
+          </button>
+          <button onClick={() => setShowDeleteConfirm(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/30 dark:border-red-700 dark:text-red-400 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" /> Excluir
           </button>
         </div>
       </div>
+
+      {/* AI Command Bar */}
+      {showAiCommand && (
+        <AiCommandBar
+          orcamentoId={id}
+          onCommand={(cmd) => aiCommand({ id, command: cmd })}
+          isRunning={isRunningCommand}
+        />
+      )}
 
       {/* Summary bar */}
       <div className="grid grid-cols-4 gap-3">
@@ -204,11 +331,18 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
                           onDelete={() => deleteItem({ id: item.id })}
                           isUpdating={isUpdating} />
                       ))}
-                      <div onClick={() => setAddItemChapterId(chapter.id)}
-                        className="grid items-center bg-muted/10 hover:bg-muted/20 cursor-pointer transition-colors"
+                      <div className="grid items-center bg-muted/10 border-t border-dashed border-border/50"
                         style={{ gridTemplateColumns: "2fr 5fr 80px 100px 120px 130px 32px" }}>
-                        <div className="px-3 py-2 col-span-6 flex items-center gap-2 text-xs text-primary hover:text-primary-700">
-                          <Plus className="w-3 h-3" /> Adicionar item em {chapter.name}
+                        <div className="px-3 py-2 col-span-6 flex items-center gap-3">
+                          <button onClick={() => setAddItemChapterId(chapter.id)}
+                            className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors">
+                            <Plus className="w-3 h-3" /> Adicionar item manualmente
+                          </button>
+                          <span className="text-border">|</span>
+                          <button onClick={() => setAiCompositionChapterId(chapter.id)}
+                            className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-700 font-medium transition-colors">
+                            <Cpu className="w-3 h-3" /> Gerar composição com IA
+                          </button>
                         </div>
                       </div>
                     </>
@@ -671,9 +805,9 @@ function AddItemModal({ chapterId, nextOrder, chapterCode, onSave, onClose, isPe
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1.5">Referência (SINAPI/SICRO/etc.)</label>
+            <label className="block text-sm font-medium mb-1.5">Referência (SINAPI/SICRO/ORSE-SE/SEINFRA/etc.)</label>
             <input type="text" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
-              placeholder="Ex: SINAPI 74209/001"
+              placeholder="Ex: SINAPI 74209/001 | ORSE-SE | SEINFRA"
               className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
           </div>
           {form.quantity && form.unitPrice && (
@@ -693,6 +827,536 @@ function AddItemModal({ chapterId, nextOrder, chapterCode, onSave, onClose, isPe
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Composition Modal ──────────────────────────────────────────────────────
+interface AiCompositionData {
+  code: string; description: string; unit: string; unitCost: number; source?: string;
+  inputs: { type: "MATERIAL" | "LABOR" | "EQUIPMENT" | "OTHER"; code: string; description: string; unit: string; coefficient: number; unitPrice: number; }[];
+}
+function AiCompositionModal({ chapterId, onSave, onClose, isPending }: {
+  chapterId: string;
+  onSave: (data: { description: string; unit: string; quantity: number; source?: string; composition: AiCompositionData }) => void;
+  onClose: () => void;
+  isPending: boolean;
+}) {
+  const [step, setStep] = useState<"describe" | "review">("describe");
+  const [serviceDesc, setServiceDesc] = useState("");
+  const [unit, setUnit] = useState("");
+  const [region, setRegion] = useState("Nordeste/SE");
+  const [context, setContext] = useState("");
+  const [quantity, setQuantity] = useState("1");
+  const [composition, setComposition] = useState<AiCompositionData | null>(null);
+  const [error, setError] = useState("");
+
+  const generateMutation = trpc.orcamento.generateComposition.useMutation({
+    onSuccess: (data) => {
+      setComposition(data.composition as AiCompositionData);
+      setUnit(data.composition.unit ?? unit);
+      setStep("review");
+    },
+    onError: (err) => setError(err.message),
+  });
+
+  const INPUT_TYPE_ICONS: Record<string, React.ReactNode> = {
+    MATERIAL: <Package className="w-3.5 h-3.5 text-blue-500" />,
+    LABOR: <HardHat className="w-3.5 h-3.5 text-amber-500" />,
+    EQUIPMENT: <Wrench className="w-3.5 h-3.5 text-slate-500" />,
+    OTHER: <Cpu className="w-3.5 h-3.5 text-muted-foreground" />,
+  };
+  const INPUT_TYPE_LABELS: Record<string, string> = { MATERIAL: "Material", LABOR: "Mão de Obra", EQUIPMENT: "Equipamento", OTHER: "Outro" };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            {step === "review" && (
+              <button onClick={() => setStep("describe")} className="p-1 rounded hover:bg-muted">
+                <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+              </button>
+            )}
+            <Cpu className="w-4 h-4 text-violet-600" />
+            <h2 className="text-base font-heading font-bold">
+              {step === "describe" ? "Gerar Composição com IA" : "Revisar Composição Gerada"}
+            </h2>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 p-5">
+          {step === "describe" ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3">
+                <Cpu className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                <p className="text-sm text-muted-foreground">Descreva o serviço em linguagem natural. A IA gerará automaticamente a composição de preço unitário com materiais, mão de obra e equipamentos.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Descreva o serviço *</label>
+                <textarea value={serviceDesc} onChange={e => setServiceDesc(e.target.value)} rows={3} autoFocus
+                  placeholder="Ex: Concreto usinado fck=25MPa, lançado e adensado em fundações, incluindo forma, armadura e cura"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 resize-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Unidade de medida</label>
+                  <select value={unit} onChange={e => setUnit(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30">
+                    <option value="">Deixar a IA decidir</option>
+                    {["m²", "m³", "m", "kg", "t", "un", "vb", "h", "dia", "mês", "pç", "l"].map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Região de referência</label>
+                  <select value={region} onChange={e => setRegion(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30">
+                    {["Nordeste/SE", "Norte", "Centro-Oeste", "Sudeste", "Sul"].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Contexto adicional (opcional)</label>
+                <input type="text" value={context} onChange={e => setContext(e.target.value)}
+                  placeholder="Ex: Obra de drenagem urbana, padrão SEINFRA, preços 2026"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30" />
+              </div>
+              {error && <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">{error}</p>}
+            </div>
+          ) : composition && (
+            <div className="space-y-4">
+              <div className="bg-card border border-border rounded-lg p-4">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="font-mono text-xs text-muted-foreground">{composition.code}</p>
+                    <p className="font-medium text-sm mt-0.5">{composition.description}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs text-muted-foreground">Custo unitário</p>
+                    <p className="font-heading font-bold text-primary text-base">{formatCurrency(composition.unitCost)}/{composition.unit}</p>
+                  </div>
+                </div>
+                {composition.source && <span className="text-xs bg-muted px-2 py-0.5 rounded font-mono">{composition.source}</span>}
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Insumos da Composição</p>
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="grid bg-muted/50 text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                    style={{ gridTemplateColumns: "80px 1fr 50px 80px 100px 100px" }}>
+                    {["Tipo", "Descrição", "Und", "Coef.", "P. Unit.", "Total"].map(h => <div key={h} className="px-2 py-2">{h}</div>)}
+                  </div>
+                  <div className="divide-y divide-border">
+                    {composition.inputs.map((inp, i) => (
+                      <div key={i} className="grid items-center text-sm hover:bg-accent/20"
+                        style={{ gridTemplateColumns: "80px 1fr 50px 80px 100px 100px" }}>
+                        <div className="px-2 py-1.5 flex items-center gap-1.5">
+                          {INPUT_TYPE_ICONS[inp.type]}
+                          <span className="text-xs">{INPUT_TYPE_LABELS[inp.type]}</span>
+                        </div>
+                        <div className="px-2 py-1.5">
+                          <p className="text-sm">{inp.description}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{inp.code}</p>
+                        </div>
+                        <div className="px-2 py-1.5 font-mono text-xs">{inp.unit}</div>
+                        <div className="px-2 py-1.5 font-mono text-xs text-right">{inp.coefficient.toFixed(4)}</div>
+                        <div className="px-2 py-1.5 font-mono text-xs text-right">{formatCurrency(inp.unitPrice)}</div>
+                        <div className="px-2 py-1.5 font-mono text-xs text-right font-semibold">
+                          {formatCurrency(inp.coefficient * inp.unitPrice)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid bg-muted/30 font-semibold text-sm border-t-2 border-border"
+                    style={{ gridTemplateColumns: "80px 1fr 50px 80px 100px 100px" }}>
+                    <div className="px-2 py-2 col-span-5 text-right text-xs text-muted-foreground">Custo Unitário Total:</div>
+                    <div className="px-2 py-2 font-mono text-right text-primary">{formatCurrency(composition.unitCost)}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Quantidade *</label>
+                  <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} min="0.001" step="0.001"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Unidade</label>
+                  <input type="text" value={unit || composition.unit} onChange={e => setUnit(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+              {quantity && (
+                <div className="bg-primary/5 border border-primary/20 rounded-lg px-4 py-2.5 flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Total estimado ({quantity} {unit || composition.unit}):</span>
+                  <span className="font-heading font-bold text-primary text-lg">{formatCurrency((parseFloat(quantity) || 0) * composition.unitCost)}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-border flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">Cancelar</button>
+          {step === "describe" ? (
+            <button
+              onClick={() => { setError(""); generateMutation.mutate({ description: serviceDesc, unit: unit || undefined, region, context: context || undefined }); }}
+              disabled={!serviceDesc.trim() || generateMutation.isPending}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-50">
+              {generateMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Gerando...</> : <><Cpu className="w-4 h-4" />Gerar Composição</>}
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                if (!composition) return;
+                const qty = parseFloat(quantity);
+                if (isNaN(qty) || qty <= 0) { toast.error("Informe uma quantidade válida"); return; }
+                onSave({ description: composition.description, unit: unit || composition.unit, quantity: qty, source: composition.source, composition });
+              }}
+              disabled={isPending}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+              {isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Adicionando...</> : <><Plus className="w-4 h-4" />Adicionar ao Orçamento</>}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Import Planilha Modal ─────────────────────────────────────────────────────
+function ImportPlanilhaModal({ orcamentoId, onSuccess, onClose }: {
+  orcamentoId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [mode, setMode] = useState<"auto" | "ai">("auto");
+  const [result, setResult] = useState<{ chaptersCreated: number; itemsCreated: number; mode?: string } | null>(null);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const isPdf = file?.name?.toLowerCase().endsWith(".pdf") ?? false;
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setIsDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) { setFile(f); setError(""); }
+  };
+
+  const handleUpload = async () => {
+    if (!file) return;
+    setIsUploading(true); setError(""); setResult(null);
+    const form = new FormData();
+    form.append("file", file);
+    form.append("orcamentoId", orcamentoId);
+    form.append("mode", isPdf ? "ai" : mode);
+    try {
+      const res = await fetch("/api/orcamento/import-planilha", { method: "POST", body: form });
+      const json = await res.json() as { chaptersCreated?: number; itemsCreated?: number; error?: string; mode?: string };
+      if (!res.ok) throw new Error(json.error ?? "Erro ao importar");
+      setResult({ chaptersCreated: json.chaptersCreated ?? 0, itemsCreated: json.itemsCreated ?? 0, mode: json.mode });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+            <h2 className="text-base font-heading font-bold">Importar Planilha do Edital</h2>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
+        </div>
+
+        {result ? (
+          <div className="text-center py-6 space-y-3">
+            <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
+            <p className="font-heading font-bold text-lg">Importação concluída!</p>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">{result.chaptersCreated}</span> capítulos e{" "}
+              <span className="font-semibold text-foreground">{result.itemsCreated}</span> itens importados.
+            </p>
+            {result.mode === "direct" && (
+              <p className="text-xs text-emerald-600 font-medium">✓ Importação direta (sem IA)</p>
+            )}
+            {result.mode === "ai" && (
+              <p className="text-xs text-violet-600 font-medium">✓ Interpretado com IA</p>
+            )}
+            <button onClick={onSuccess} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90">
+              Ver Orçamento
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Zona de drop */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              onClick={() => inputRef.current?.click()}
+              className={cn(
+                "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
+                isDragging ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20" : "border-border hover:border-emerald-400 hover:bg-muted/30"
+              )}>
+              <input ref={inputRef} type="file"
+                accept=".xlsx,.xls,.csv,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setError(""); } }}
+              />
+              <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              {file ? (
+                <div>
+                  <p className="font-medium text-sm">{file.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{(file.size / 1024).toFixed(1)} KB · clique para trocar</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-medium">Arraste ou clique para selecionar</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Excel (.xlsx, .xls, .csv) ou PDF · máx 20MB</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modo de importação (só para Excel) */}
+            {!isPdf && (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setMode("auto")}
+                  className={cn(
+                    "w-full flex items-start gap-3 p-3 text-left transition-colors",
+                    mode === "auto" ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-card hover:bg-muted/40"
+                  )}>
+                  <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
+                    mode === "auto" ? "border-emerald-600" : "border-muted-foreground")}>
+                    {mode === "auto" && <div className="w-2 h-2 rounded-full bg-emerald-600" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Importação direta {mode === "auto" && <span className="text-xs text-emerald-600 font-normal">(recomendado)</span>}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Detecta automaticamente colunas CÓDIGO, DESCRIÇÃO, UNIDADE, QUANTIDADE e PREÇO UNIT. Rápido, sem IA.
+                    </p>
+                  </div>
+                </button>
+                <div className="border-t border-border" />
+                <button
+                  type="button"
+                  onClick={() => setMode("ai")}
+                  className={cn(
+                    "w-full flex items-start gap-3 p-3 text-left transition-colors",
+                    mode === "ai" ? "bg-violet-50 dark:bg-violet-950/20" : "bg-card hover:bg-muted/40"
+                  )}>
+                  <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
+                    mode === "ai" ? "border-violet-600" : "border-muted-foreground")}>
+                    {mode === "ai" && <div className="w-2 h-2 rounded-full bg-violet-600" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Interpretar com IA</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Claude lê e estrutura qualquer formato, inclusive planilhas sem padrão definido. Requer chave Anthropic.
+                    </p>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {isPdf && (
+              <div className="flex items-start gap-3 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3">
+                <Sparkles className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  PDFs são sempre interpretados pela IA. Requer <code className="text-violet-600">ANTHROPIC_API_KEY</code> configurado.
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">Cancelar</button>
+              <button onClick={handleUpload} disabled={!file || isUploading}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors",
+                  (mode === "ai" || isPdf) ? "bg-violet-600 hover:bg-violet-700" : "bg-emerald-600 hover:bg-emerald-700"
+                )}>
+                {isUploading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />{mode === "ai" || isPdf ? "Processando com IA..." : "Importando..."}</>
+                  : <><Upload className="w-4 h-4" />Importar Planilha</>
+                }
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── AI Command Bar ────────────────────────────────────────────────────────────
+interface CommandEntry { role: "user" | "assistant"; text: string; }
+
+function AiCommandBar({ orcamentoId, onCommand, isRunning }: {
+  orcamentoId: string;
+  onCommand: (cmd: string) => Promise<{ summary: string; actionsExecuted: number } | void> | void;
+  isRunning: boolean;
+}) {
+  const [command, setCommand] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [history, setHistory] = useState<CommandEntry[]>([]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // Scroll history to bottom
+  useEffect(() => {
+    if (historyRef.current) historyRef.current.scrollTop = historyRef.current.scrollHeight;
+  }, [history]);
+
+  const handleSend = async () => {
+    const cmd = command.trim();
+    if (!cmd || isRunning) return;
+    setHistory(h => [...h, { role: "user", text: cmd }]);
+    setCommand("");
+    try {
+      const result = await (onCommand(cmd) as Promise<{ summary: string; actionsExecuted: number }>);
+      if (result?.summary) {
+        setHistory(h => [...h, { role: "assistant", text: result.summary }]);
+      }
+    } catch {
+      setHistory(h => [...h, { role: "assistant", text: "Erro ao executar o comando. Tente novamente." }]);
+    }
+  };
+
+  const startVoice = () => {
+    type SRConstructor = new () => { lang: string; interimResults: boolean; maxAlternatives: number; start: () => void; onresult: ((e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null; onerror: (() => void) | null };
+    const SpeechRecognition =
+      (window as unknown as { SpeechRecognition?: SRConstructor; webkitSpeechRecognition?: SRConstructor }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: SRConstructor }).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) { toast.error("Seu navegador não suporta reconhecimento de voz"); return; }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "pt-BR";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    setIsListening(true);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setCommand(transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    (recognition as unknown as { onend: () => void }).onend = () => setIsListening(false);
+    recognition.start();
+  };
+
+  const examples = [
+    "Adicione 50m² de alvenaria de vedação em tijolo cerâmico no capítulo 02, R$85/m²",
+    "Mude o BDI para 28%",
+    "Adicione um capítulo chamado Instalações Elétricas",
+    "Atualize o preço do item de escavação para R$45/m³",
+  ];
+
+  return (
+    <div className="bg-card border border-indigo-200 dark:border-indigo-800 rounded-xl overflow-hidden">
+      <div className="px-4 py-3 bg-indigo-50 dark:bg-indigo-950/30 border-b border-indigo-200 dark:border-indigo-800 flex items-center gap-2">
+        <MessageSquare className="w-4 h-4 text-indigo-600" />
+        <span className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">Assistente IA — Edição por Comando</span>
+        <span className="ml-auto text-xs text-muted-foreground">Digite ou fale para editar o orçamento</span>
+      </div>
+
+      {/* History */}
+      {history.length > 0 && (
+        <div ref={historyRef} className="max-h-48 overflow-y-auto px-4 py-3 space-y-2 border-b border-border">
+          {history.map((entry, i) => (
+            <div key={i} className={cn("flex gap-2.5", entry.role === "user" ? "justify-end" : "justify-start")}>
+              <div className={cn(
+                "max-w-[85%] rounded-xl px-3 py-2 text-sm leading-relaxed",
+                entry.role === "user"
+                  ? "bg-indigo-600 text-white rounded-br-sm"
+                  : "bg-muted text-foreground rounded-bl-sm"
+              )}>
+                {entry.role === "assistant" && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">
+                    <Sparkles className="w-3 h-3" /> IA
+                  </span>
+                )}
+                {entry.text}
+              </div>
+            </div>
+          ))}
+          {isRunning && (
+            <div className="flex justify-start">
+              <div className="bg-muted rounded-xl px-3 py-2 text-sm flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Executando...
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Examples (only when no history) */}
+      {history.length === 0 && (
+        <div className="px-4 py-3 border-b border-border">
+          <p className="text-xs text-muted-foreground mb-2 font-medium">Exemplos de comandos:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {examples.map((ex) => (
+              <button key={ex} onClick={() => setCommand(ex)}
+                className="text-xs px-2.5 py-1 bg-muted hover:bg-indigo-50 hover:text-indigo-700 dark:hover:bg-indigo-950/30 rounded-lg border border-border transition-colors">
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="px-4 py-3 flex gap-2 items-end">
+        <textarea
+          ref={inputRef}
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          placeholder={isListening ? "Ouvindo..." : "Digite ou fale um comando... (Enter para enviar, Shift+Enter nova linha)"}
+          rows={2}
+          disabled={isListening}
+          className={cn(
+            "flex-1 text-sm px-3 py-2 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 resize-none",
+            isListening && "border-red-400 bg-red-50 dark:bg-red-950/10"
+          )}
+        />
+        <div className="flex flex-col gap-1.5">
+          <button onClick={startVoice} disabled={isListening || isRunning} title="Falar comando"
+            className={cn(
+              "p-2 rounded-lg border transition-all",
+              isListening
+                ? "border-red-400 bg-red-50 text-red-600 dark:bg-red-950/20 animate-pulse"
+                : "border-border hover:border-red-300 hover:bg-red-50 hover:text-red-600 text-muted-foreground"
+            )}>
+            {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+          </button>
+          <button onClick={handleSend} disabled={!command.trim() || isRunning}
+            className="p-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+            {isRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
     </div>
   );

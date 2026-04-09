@@ -7,7 +7,7 @@ function getResend(): Resend {
   return _resend;
 }
 const FROM = process.env.EMAIL_FROM ?? "ConstruTech Pro <noreply@construtech.pro>";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://construtech-pro-xi.vercel.app";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.construtechpro.com";
 
 /* ── Types ── */
 export interface ExpiringDoc {
@@ -158,6 +158,130 @@ export async function sendDocumentExpirationAlert(opts: {
     const msg = err instanceof Error ? err.message : "Erro ao enviar e-mail";
     console.error("[email] send error:", msg);
     return { success: false, error: msg };
+  }
+}
+
+export async function sendEmailVerification(opts: {
+  to: string;
+  name: string;
+  token: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("[email] RESEND_API_KEY not set — skipping verification email");
+    return { success: false, error: "RESEND_API_KEY not configured" };
+  }
+
+  const verifyUrl = `${APP_URL}/verificar-email?token=${opts.token}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><title>Confirme seu e-mail</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+        <tr><td style="background:#1e3a5f;padding:24px 28px;">
+          <h1 style="margin:0;color:#fff;font-size:18px;">ConstruTech Pro</h1>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 8px;font-size:15px;color:#1e293b;">Olá, <strong>${opts.name}</strong>!</p>
+          <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6;">
+            Obrigado por criar sua conta no ConstruTech Pro.<br>
+            Clique no botão abaixo para confirmar seu e-mail e ativar sua conta. O link expira em <strong>24 horas</strong>.
+          </p>
+          <div style="text-align:center;margin:28px 0;">
+            <a href="${verifyUrl}"
+               style="display:inline-block;background:#1e3a5f;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+              Confirmar e-mail
+            </a>
+          </div>
+          <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">
+            Se você não criou uma conta, ignore este e-mail.<br>
+            Link: <a href="${verifyUrl}" style="color:#3b82f6;word-break:break-all;">${verifyUrl}</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 28px;border-top:1px solid #f1f5f9;background:#f8fafc;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">ConstruTech Pro</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM,
+      to: opts.to,
+      subject: "Confirme seu e-mail — ConstruTech Pro",
+      html,
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erro" };
+  }
+}
+
+export async function sendPasswordResetEmail(opts: {
+  to: string;
+  name: string;
+  token: string;
+}): Promise<{ success: boolean; error?: string }> {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("[email] RESEND_API_KEY not set — skipping password reset email");
+    return { success: false, error: "RESEND_API_KEY not configured" };
+  }
+
+  const resetUrl = `${APP_URL}/redefinir-senha?token=${opts.token}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><title>Redefinir Senha</title></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);">
+        <tr><td style="background:#1e3a5f;padding:24px 28px;">
+          <h1 style="margin:0;color:#fff;font-size:18px;">ConstruTech Pro</h1>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 8px;font-size:15px;color:#1e293b;">Olá, <strong>${opts.name}</strong>.</p>
+          <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6;">
+            Recebemos uma solicitação para redefinir a senha da sua conta.<br>
+            Clique no botão abaixo para criar uma nova senha. O link expira em <strong>1 hora</strong>.
+          </p>
+          <div style="text-align:center;margin:28px 0;">
+            <a href="${resetUrl}"
+               style="display:inline-block;background:#1e3a5f;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">
+              Redefinir minha senha
+            </a>
+          </div>
+          <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">
+            Se você não solicitou a redefinição, ignore este e-mail. Sua senha permanece a mesma.<br>
+            Link: <a href="${resetUrl}" style="color:#3b82f6;word-break:break-all;">${resetUrl}</a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 28px;border-top:1px solid #f1f5f9;background:#f8fafc;">
+          <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">
+            ConstruTech Pro · <a href="${APP_URL}" style="color:#3b82f6;">construtech.pro</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM,
+      to: opts.to,
+      subject: "Redefinição de senha — ConstruTech Pro",
+      html,
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Erro" };
   }
 }
 

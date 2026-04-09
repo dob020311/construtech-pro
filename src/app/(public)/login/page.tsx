@@ -40,7 +40,11 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError("Email ou senha incorretos. Verifique suas credenciais.");
+        if (result.error === "EMAIL_NOT_VERIFIED" || result.error.includes("EMAIL_NOT_VERIFIED")) {
+          setError("Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.");
+        } else {
+          setError("Email ou senha incorretos. Verifique suas credenciais.");
+        }
         return;
       }
 
@@ -80,7 +84,7 @@ export default function LoginPage() {
           <div className="mt-10 space-y-4">
             {[
               "Análise automática de editais com IA",
-              "Planilha orçamentária profissional (SINAPI/SICRO)",
+              "Planilha orçamentária profissional (SINAPI/SICRO/ORSE-SE/SEINFRA)",
               "CRM completo para gestão do pipeline",
               "RPA para captura automática de editais",
               "Gestão documental com alertas de validade",
@@ -195,7 +199,13 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-4 text-right">
+            <Link href="/esqueci-senha" className="text-sm text-primary hover:underline">
+              Esqueci minha senha
+            </Link>
+          </div>
+
+          <div className="mt-4 text-center">
             <p className="text-sm text-muted-foreground">
               Não tem conta?{" "}
               <Link href="/registro" className="text-primary font-medium hover:underline">
@@ -204,18 +214,20 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Demo credentials */}
-          <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Credenciais de demonstração:</p>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                <span className="font-mono">admin@construtech.com</span> — Administrador
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Senha: <span className="font-mono">demo123</span>
-              </p>
+          {/* Demo credentials — dev only */}
+          {process.env.NODE_ENV === "development" && (
+            <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border">
+              <p className="text-xs font-medium text-muted-foreground mb-2">Credenciais de demonstração:</p>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono">admin@construtech.com</span> — Administrador
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Senha: <span className="font-mono">demo123</span>
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

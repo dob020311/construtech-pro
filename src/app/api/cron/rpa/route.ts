@@ -106,9 +106,14 @@ async function runEditalSearch(companyId: string, config: Record<string, unknown
 }
 
 export async function GET(req: NextRequest) {
-  // Verify Vercel cron secret
+  // Verify Vercel cron secret — fail closed: if secret not configured, block all calls
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error("[cron/rpa] CRON_SECRET não configurado");
+    return NextResponse.json({ error: "Not configured" }, { status: 500 });
+  }
   const secret = req.headers.get("authorization");
-  if (process.env.CRON_SECRET && secret !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (secret !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

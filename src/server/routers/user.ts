@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure, adminProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, adminProcedure, assertPlanLimit } from "../trpc";
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
+import { PLANS, type PlanKey } from "@/lib/stripe";
 
 export const userRouter = createTRPCRouter({
   me: protectedProcedure.query(async ({ ctx }) => {
@@ -39,6 +40,42 @@ export const userRouter = createTRPCRouter({
     });
   }),
 
+  getPlanUsage: protectedProcedure.query(async ({ ctx }) => {
+    const companyId = ctx.session.user.companyId;
+    const company = await ctx.prisma.company.findUnique({
+      where: { id: companyId },
+      select: { plan: true, planExpiresAt: true, stripeSubscriptionId: true },
+    });
+
+    const planKey = (
+      company?.planExpiresAt && company.planExpiresAt < new Date()
+        ? "FREE"
+        : (company?.plan ?? "FREE")
+    ) as PlanKey;
+
+    const limits = PLANS[planKey].limits;
+
+    const [licitacoes, users, rpaJobs, documents] = await Promise.all([
+      ctx.prisma.licitacao.count({ where: { companyId } }),
+      ctx.prisma.user.count({ where: { companyId } }),
+      ctx.prisma.rpaJob.count({ where: { companyId } }),
+      ctx.prisma.document.count({ where: { companyId } }),
+    ]);
+
+    return {
+      planKey,
+      planName: PLANS[planKey].name,
+      stripeSubscriptionId: company?.stripeSubscriptionId ?? null,
+      planExpiresAt: company?.planExpiresAt ?? null,
+      usage: {
+        licitacoes: { current: licitacoes, limit: limits.licitacoes },
+        users: { current: users, limit: limits.users },
+        rpaJobs: { current: rpaJobs, limit: limits.rpaJobs },
+        documents: { current: documents, limit: limits.documents },
+      },
+    };
+  }),
+
   createUser: adminProcedure
     .input(
       z.object({
@@ -49,6 +86,8 @@ export const userRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      await assertPlanLimit(ctx.session.user.companyId, "users");
+
       const exists = await ctx.prisma.user.findUnique({ where: { email: input.email } });
       if (exists) throw new TRPCError({ code: "CONFLICT", message: "Email já cadastrado" });
 
@@ -60,6 +99,7 @@ export const userRouter = createTRPCRouter({
           passwordHash,
           role: input.role,
           companyId: ctx.session.user.companyId,
+          emailVerified: new Date(), // admin-created users don't need email verification
         },
         select: { id: true, name: true, email: true, role: true },
       });

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   if (!company) return NextResponse.json({ error: "Empresa não encontrada" }, { status: 404 });
 
   const stripe = getStripe();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://construtech-pro-xi.vercel.app";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.construtechpro.com";
 
   // Create or retrieve Stripe customer
   let customerId = company.stripeCustomerId;

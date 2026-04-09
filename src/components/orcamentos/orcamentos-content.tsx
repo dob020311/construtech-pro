@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { trpc } from "@/lib/trpc";
 import Link from "next/link";
-import { Plus, Calculator, ExternalLink, Clock, FileText, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Calculator, ExternalLink, Clock, FileText, X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
 import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -129,14 +129,82 @@ function NovoOrcamentoModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ConfirmDeleteModal({
+  name,
+  onConfirm,
+  onClose,
+  loading,
+}: {
+  name: string;
+  onConfirm: () => void;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+            <Trash2 className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-heading font-bold">Excluir orçamento</h2>
+            <p className="text-xs text-muted-foreground">Esta ação não pode ser desfeita</p>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground mb-5">
+          Tem certeza que deseja excluir <span className="font-semibold text-foreground">"{name}"</span>?
+          Todos os capítulos e itens serão removidos permanentemente.
+        </p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+          >
+            {loading ? "Excluindo..." : "Excluir"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function OrcamentosContent() {
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.orcamento.list.useQuery({ page, limit: 20 });
+
+  const deleteOrcamento = trpc.orcamento.delete.useMutation({
+    onSuccess: () => {
+      utils.orcamento.list.invalidate();
+      setDeleteTarget(null);
+    },
+  });
 
   return (
     <div className="space-y-5">
       {showModal && <NovoOrcamentoModal onClose={() => setShowModal(false)} />}
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          name={deleteTarget.name}
+          loading={deleteOrcamento.isPending}
+          onConfirm={() => deleteOrcamento.mutate({ id: deleteTarget.id })}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
 
       <div className="flex items-center justify-between">
         <div>
@@ -175,13 +243,13 @@ export function OrcamentosContent() {
         <>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {data?.items.map((orc) => (
+            <div key={orc.id} className="relative group">
             <Link
-              key={orc.id}
               href={`/orcamentos/${orc.id}`}
-              className="bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-primary/30 transition-all group"
+              className="block bg-card border border-border rounded-xl p-5 hover:shadow-md hover:border-primary/30 transition-all group"
             >
               <div className="flex items-start justify-between mb-2">
-                <h3 className="font-heading font-semibold text-sm leading-tight line-clamp-2 flex-1">
+                <h3 className="font-heading font-semibold text-sm leading-tight line-clamp-2 flex-1 pr-6">
                   {orc.name}
                 </h3>
                 <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 ml-2" />
@@ -219,6 +287,14 @@ export function OrcamentosContent() {
                 </div>
               </div>
             </Link>
+            <button
+              onClick={(e) => { e.preventDefault(); setDeleteTarget({ id: orc.id, name: orc.name }); }}
+              className="absolute top-3 right-3 p-1.5 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all z-10"
+              title="Excluir orçamento"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            </div>
           ))}
         </div>
         {data && data.pages > 1 && (

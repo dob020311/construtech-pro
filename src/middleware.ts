@@ -5,7 +5,10 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Public routes that don't need auth
-  const publicPaths = ["/login", "/registro", "/api/auth", "/api/debug"];
+  const publicPaths = ["/login", "/registro", "/esqueci-senha", "/redefinir-senha", "/verificar-email", "/api/auth", "/api/debug"];
+
+  // Root path: handled in page.tsx (redirects to dashboard if authenticated, else shows landing)
+  if (pathname === "/") return NextResponse.next();
   const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 
   if (isPublicPath) return NextResponse.next();

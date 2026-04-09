@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { createTRPCRouter, protectedProcedure, assertPlanLimit } from "../trpc";
 import { LicitacaoStatus, Modality } from "@prisma/client";
 import { TRPCError } from "@trpc/server";
 
@@ -33,7 +33,7 @@ export const licitacaoRouter = createTRPCRouter({
         segment: z.string().optional(),
         state: z.string().optional(),
         modality: z.nativeEnum(Modality).optional(),
-        sortBy: z.string().default("createdAt"),
+        sortBy: z.enum(["createdAt", "updatedAt", "number", "object", "estimatedValue", "closingDate"]).default("createdAt"),
         sortOrder: z.enum(["asc", "desc"]).default("desc"),
       })
     )
@@ -113,6 +113,8 @@ export const licitacaoRouter = createTRPCRouter({
   create: protectedProcedure
     .input(licitacaoSchema)
     .mutation(async ({ ctx, input }) => {
+      await assertPlanLimit(ctx.session.user.companyId, "licitacoes");
+
       const { portalUrl, estimatedValue, openingDate, closingDate, deliveryDate, ...rest } = input;
 
       const licitacao = await ctx.prisma.licitacao.create({

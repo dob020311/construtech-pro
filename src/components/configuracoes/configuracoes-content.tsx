@@ -92,9 +92,34 @@ const PLAN_BG: Record<string, string> = {
   FREE: "bg-muted", STARTER: "bg-blue-50 dark:bg-blue-900/20", PRO: "bg-purple-50 dark:bg-purple-900/20", ENTERPRISE: "bg-amber-50 dark:bg-amber-900/20",
 };
 
+function UsageBar({ current, limit, label }: { current: number; limit: number; label: string }) {
+  const pct = limit === -1 ? 0 : Math.min(100, Math.round((current / limit) * 100));
+  const isNearLimit = limit !== -1 && pct >= 80;
+  const isAtLimit = limit !== -1 && current >= limit;
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={cn("font-medium", isAtLimit ? "text-red-500" : isNearLimit ? "text-amber-500" : "text-foreground")}>
+          {current} / {limit === -1 ? "∞" : limit}
+        </span>
+      </div>
+      {limit !== -1 && (
+        <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-all", isAtLimit ? "bg-red-500" : isNearLimit ? "bg-amber-500" : "bg-primary")}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BillingTab({ currentPlan }: { currentPlan?: string }) {
   const [loading, setLoading] = useState<PlanKey | null>(null);
-  const active = (currentPlan ?? "FREE") as PlanKey;
+  const { data: planUsage } = trpc.user.getPlanUsage.useQuery();
+  const active = (planUsage?.planKey ?? currentPlan ?? "FREE") as PlanKey;
 
   const handleUpgrade = async (planKey: PlanKey) => {
     const plan = PLANS[planKey];
@@ -136,7 +161,7 @@ function BillingTab({ currentPlan }: { currentPlan?: string }) {
       {/* Current plan badge */}
       <div className={cn("flex items-center gap-3 p-4 rounded-xl border", PLAN_BG[active])}>
         {(() => { const Icon = PLAN_ICONS[active] ?? Zap; return <Icon className={cn("w-5 h-5", PLAN_COLORS[active])} />; })()}
-        <div>
+        <div className="flex-1">
           <p className="text-sm font-semibold text-foreground">
             Plano atual: <span className={PLAN_COLORS[active]}>{PLANS[active].name}</span>
           </p>
@@ -144,7 +169,23 @@ function BillingTab({ currentPlan }: { currentPlan?: string }) {
             {PLANS[active].price === 0 ? "Grátis para sempre" : formatPrice(PLANS[active].price) + "/mês"}
           </p>
         </div>
+        {planUsage?.planExpiresAt && (
+          <span className="text-xs text-amber-600 font-medium">
+            Expira {new Date(planUsage.planExpiresAt).toLocaleDateString("pt-BR")}
+          </span>
+        )}
       </div>
+
+      {/* Usage meters */}
+      {planUsage?.usage && (
+        <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <p className="text-sm font-semibold">Uso atual</p>
+          <UsageBar label="Licitações" current={planUsage.usage.licitacoes.current} limit={planUsage.usage.licitacoes.limit} />
+          <UsageBar label="Usuários" current={planUsage.usage.users.current} limit={planUsage.usage.users.limit} />
+          <UsageBar label="Agentes RPA" current={planUsage.usage.rpaJobs.current} limit={planUsage.usage.rpaJobs.limit} />
+          <UsageBar label="Documentos" current={planUsage.usage.documents.current} limit={planUsage.usage.documents.limit} />
+        </div>
+      )}
 
       {/* Plan cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
