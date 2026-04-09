@@ -1031,20 +1031,42 @@ function AiCompositionModal({ chapterId, onSave, onClose, isPending }: {
 }
 
 // ── Import Planilha Modal ─────────────────────────────────────────────────────
+interface PreviewItem {
+  id: string; // temp client id
+  code: string;
+  description: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  source?: string;
+}
+interface PreviewChapter {
+  id: string; // temp client id
+  code: string;
+  name: string;
+  items: PreviewItem[];
+}
+
 function ImportPlanilhaModal({ orcamentoId, onSuccess, onClose }: {
   orcamentoId: string;
   onSuccess: () => void;
   onClose: () => void;
 }) {
+  const [step, setStep] = useState<"upload" | "edit" | "done">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState<"auto" | "ai">("auto");
+  const [previewChapters, setPreviewChapters] = useState<PreviewChapter[]>([]);
+  const [expandedChapters, setExpandedChapters] = useState<string[]>([]);
   const [result, setResult] = useState<{ chaptersCreated: number; itemsCreated: number; mode?: string } | null>(null);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isPdf = file?.name?.toLowerCase().endsWith(".pdf") ?? false;
+
+  const totalItems = previewChapters.reduce((s, c) => s + c.items.length, 0);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false);
@@ -1052,157 +1074,336 @@ function ImportPlanilhaModal({ orcamentoId, onSuccess, onClose }: {
     if (f) { setFile(f); setError(""); }
   };
 
-  const handleUpload = async () => {
+  // Step 1 → 2: parse file, get preview
+  const handlePreview = async () => {
     if (!file) return;
-    setIsUploading(true); setError(""); setResult(null);
+    setIsProcessing(true); setError("");
     const form = new FormData();
     form.append("file", file);
     form.append("orcamentoId", orcamentoId);
     form.append("mode", isPdf ? "ai" : mode);
+    form.append("preview", "true");
     try {
       const res = await fetch("/api/orcamento/import-planilha", { method: "POST", body: form });
-      const json = await res.json() as { chaptersCreated?: number; itemsCreated?: number; error?: string; mode?: string };
-      if (!res.ok) throw new Error(json.error ?? "Erro ao importar");
-      setResult({ chaptersCreated: json.chaptersCreated ?? 0, itemsCreated: json.itemsCreated ?? 0, mode: json.mode });
+      const json = await res.json() as { chapters?: { code: string; name: string; items: { code: string; description: string; unit: string; quantity: number; unitPrice: number; source?: string }[] }[]; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Erro ao processar arquivo");
+      const chapters: PreviewChapter[] = (json.chapters ?? []).map((ch, ci) => ({
+        id: `ch-${ci}`,
+        code: ch.code,
+        name: ch.name,
+        items: (ch.items ?? []).map((it, ii) => ({
+          id: `it-${ci}-${ii}`,
+          code: it.code,
+          description: it.description,
+          unit: it.unit || "un",
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.unitPrice) || 0,
+          source: it.source,
+        })),
+      }));
+      setPreviewChapters(chapters);
+      setExpandedChapters(chapters.map(c => c.id));
+      setStep("edit");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
     } finally {
-      setIsUploading(false);
+      setIsProcessing(false);
     }
   };
 
+  // Step 2 → 3: save edited chapters
+  const handleSave = async () => {
+    setIsSaving(true); setError("");
+    try {
+      const body = {
+        orcamentoId,
+        chapters: previewChapters
+          .filter(c => c.items.length > 0)
+          .map(c => ({
+            code: c.code,
+            name: c.name,
+            items: c.items.map(it => ({
+              code: it.code,
+              description: it.description,
+              unit: it.unit,
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              source: it.source,
+            })),
+          })),
+      };
+      const res = await fetch("/api/orcamento/import-planilha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json() as { chaptersCreated?: number; itemsCreated?: number; error?: string; mode?: string };
+      if (!res.ok) throw new Error(json.error ?? "Erro ao salvar");
+      setResult({ chaptersCreated: json.chaptersCreated ?? 0, itemsCreated: json.itemsCreated ?? 0, mode: json.mode });
+      setStep("done");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro desconhecido");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Edit helpers
+  const updateChapterName = (chId: string, name: string) =>
+    setPreviewChapters(prev => prev.map(c => c.id === chId ? { ...c, name } : c));
+  const deleteChapter = (chId: string) =>
+    setPreviewChapters(prev => prev.filter(c => c.id !== chId));
+  const updateItem = (chId: string, itId: string, field: keyof PreviewItem, val: string | number) =>
+    setPreviewChapters(prev => prev.map(c => c.id === chId
+      ? { ...c, items: c.items.map(it => it.id === itId ? { ...it, [field]: val } : it) }
+      : c
+    ));
+  const deleteItem = (chId: string, itId: string) =>
+    setPreviewChapters(prev => prev.map(c => c.id === chId
+      ? { ...c, items: c.items.filter(it => it.id !== itId) }
+      : c
+    ));
+  const toggleChapter = (chId: string) =>
+    setExpandedChapters(prev => prev.includes(chId) ? prev.filter(id => id !== chId) : [...prev, chId]);
+
+  const modalMaxW = step === "edit" ? "max-w-4xl" : "max-w-lg";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
-        <div className="flex items-center justify-between mb-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={step !== "edit" ? onClose : undefined} />
+      <div className={cn("relative bg-card border border-border rounded-xl shadow-xl w-full mx-4 flex flex-col", modalMaxW, step === "edit" ? "max-h-[90vh]" : "")}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <h2 className="text-base font-heading font-bold">Importar Planilha do Edital</h2>
+            <h2 className="text-base font-heading font-bold">
+              {step === "upload" && "Importar Planilha do Edital"}
+              {step === "edit" && `Revisar e Editar — ${previewChapters.length} capítulos · ${totalItems} itens`}
+              {step === "done" && "Importação concluída!"}
+            </h2>
           </div>
           <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
 
-        {result ? (
-          <div className="text-center py-6 space-y-3">
-            <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
-            <p className="font-heading font-bold text-lg">Importação concluída!</p>
-            <p className="text-sm text-muted-foreground">
-              <span className="font-semibold text-foreground">{result.chaptersCreated}</span> capítulos e{" "}
-              <span className="font-semibold text-foreground">{result.itemsCreated}</span> itens importados.
-            </p>
-            {result.mode === "direct" && (
-              <p className="text-xs text-emerald-600 font-medium">✓ Importação direta (sem IA)</p>
-            )}
-            {result.mode === "ai" && (
-              <p className="text-xs text-violet-600 font-medium">✓ Interpretado com IA</p>
-            )}
-            <button onClick={onSuccess} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90">
-              Ver Orçamento
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Zona de drop */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => inputRef.current?.click()}
-              className={cn(
-                "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
-                isDragging ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20" : "border-border hover:border-emerald-400 hover:bg-muted/30"
-              )}>
-              <input ref={inputRef} type="file"
-                accept=".xlsx,.xls,.csv,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setError(""); } }}
-              />
-              <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
-              {file ? (
-                <div>
-                  <p className="font-medium text-sm">{file.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{(file.size / 1024).toFixed(1)} KB · clique para trocar</p>
+        {/* Body */}
+        <div className={cn("p-5 overflow-y-auto", step === "edit" && "flex-1")}>
+
+          {/* ── STEP 1: Upload ── */}
+          {step === "upload" && (
+            <div className="space-y-4">
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+                className={cn(
+                  "border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all",
+                  isDragging ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20" : "border-border hover:border-emerald-400 hover:bg-muted/30"
+                )}>
+                <input ref={inputRef} type="file"
+                  accept=".xlsx,.xls,.csv,.pdf,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setError(""); } }}
+                />
+                <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                {file ? (
+                  <div>
+                    <p className="font-medium text-sm">{file.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{(file.size / 1024).toFixed(1)} KB · clique para trocar</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm font-medium">Arraste ou clique para selecionar</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Excel (.xlsx, .xls, .csv) ou PDF · máx 20MB</p>
+                  </div>
+                )}
+              </div>
+
+              {!isPdf && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <button type="button" onClick={() => setMode("auto")}
+                    className={cn("w-full flex items-start gap-3 p-3 text-left transition-colors",
+                      mode === "auto" ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-card hover:bg-muted/40")}>
+                    <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
+                      mode === "auto" ? "border-emerald-600" : "border-muted-foreground")}>
+                      {mode === "auto" && <div className="w-2 h-2 rounded-full bg-emerald-600" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Importação direta {mode === "auto" && <span className="text-xs text-emerald-600 font-normal">(recomendado)</span>}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Detecta colunas CÓDIGO, DESCRIÇÃO, UNIDADE, QUANTIDADE e PREÇO UNIT. Rápido, sem IA.</p>
+                    </div>
+                  </button>
+                  <div className="border-t border-border" />
+                  <button type="button" onClick={() => setMode("ai")}
+                    className={cn("w-full flex items-start gap-3 p-3 text-left transition-colors",
+                      mode === "ai" ? "bg-violet-50 dark:bg-violet-950/20" : "bg-card hover:bg-muted/40")}>
+                    <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
+                      mode === "ai" ? "border-violet-600" : "border-muted-foreground")}>
+                      {mode === "ai" && <div className="w-2 h-2 rounded-full bg-violet-600" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Interpretar com IA</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Claude lê e estrutura qualquer formato, inclusive planilhas sem padrão definido.</p>
+                    </div>
+                  </button>
                 </div>
-              ) : (
-                <div>
-                  <p className="text-sm font-medium">Arraste ou clique para selecionar</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Excel (.xlsx, .xls, .csv) ou PDF · máx 20MB</p>
+              )}
+
+              {isPdf && (
+                <div className="flex items-start gap-3 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3">
+                  <Sparkles className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-muted-foreground">PDFs são sempre interpretados pela IA. Requer <code className="text-violet-600">ANTHROPIC_API_KEY</code>.</p>
+                </div>
+              )}
+
+              {error && (
+                <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">Cancelar</button>
+                <button onClick={handlePreview} disabled={!file || isProcessing}
+                  className={cn(
+                    "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors",
+                    (mode === "ai" || isPdf) ? "bg-violet-600 hover:bg-violet-700" : "bg-emerald-600 hover:bg-emerald-700"
+                  )}>
+                  {isProcessing
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />{mode === "ai" || isPdf ? "Processando com IA..." : "Lendo arquivo..."}</>
+                    : <><Upload className="w-4 h-4" />Avançar para Revisão</>
+                  }
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 2: Edit ── */}
+          {step === "edit" && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground mb-3">
+                Revise os dados extraídos. Edite descrições, quantidades e preços antes de confirmar.
+              </p>
+              {previewChapters.map((ch) => (
+                <div key={ch.id} className="border border-border rounded-lg overflow-hidden">
+                  {/* Chapter header */}
+                  <div className="flex items-center gap-2 bg-muted/50 px-3 py-2">
+                    <button onClick={() => toggleChapter(ch.id)} className="text-muted-foreground hover:text-foreground flex-shrink-0">
+                      {expandedChapters.includes(ch.id)
+                        ? <ChevronDown className="w-4 h-4" />
+                        : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                    <input
+                      value={ch.name}
+                      onChange={(e) => updateChapterName(ch.id, e.target.value)}
+                      className="flex-1 text-sm font-semibold bg-transparent focus:outline-none focus:bg-background focus:border focus:border-border rounded px-1 py-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <span className="text-xs text-muted-foreground ml-auto mr-2">{ch.items.length} itens</span>
+                    <button onClick={() => deleteChapter(ch.id)} className="text-muted-foreground hover:text-red-600 transition-colors flex-shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Items table */}
+                  {expandedChapters.includes(ch.id) && ch.items.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border bg-muted/20">
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground w-20">Código</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Descrição</th>
+                            <th className="text-left px-2 py-1.5 font-medium text-muted-foreground w-16">Und</th>
+                            <th className="text-right px-2 py-1.5 font-medium text-muted-foreground w-20">Qtd</th>
+                            <th className="text-right px-2 py-1.5 font-medium text-muted-foreground w-24">Preço Unit</th>
+                            <th className="text-right px-2 py-1.5 font-medium text-muted-foreground w-24">Total</th>
+                            <th className="w-8" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ch.items.map((it) => (
+                            <tr key={it.id} className="border-b border-border/50 hover:bg-muted/10 group">
+                              <td className="px-2 py-1">
+                                <input value={it.code} onChange={(e) => updateItem(ch.id, it.id, "code", e.target.value)}
+                                  className="w-full bg-transparent focus:bg-background focus:border focus:border-border rounded px-1 focus:outline-none font-mono" />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input value={it.description} onChange={(e) => updateItem(ch.id, it.id, "description", e.target.value)}
+                                  className="w-full bg-transparent focus:bg-background focus:border focus:border-border rounded px-1 focus:outline-none" />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input value={it.unit} onChange={(e) => updateItem(ch.id, it.id, "unit", e.target.value)}
+                                  className="w-full bg-transparent focus:bg-background focus:border focus:border-border rounded px-1 focus:outline-none text-center" />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input type="number" value={it.quantity}
+                                  onChange={(e) => updateItem(ch.id, it.id, "quantity", parseFloat(e.target.value) || 0)}
+                                  className="w-full bg-transparent focus:bg-background focus:border focus:border-border rounded px-1 focus:outline-none text-right font-mono" />
+                              </td>
+                              <td className="px-2 py-1">
+                                <input type="number" value={it.unitPrice}
+                                  onChange={(e) => updateItem(ch.id, it.id, "unitPrice", parseFloat(e.target.value) || 0)}
+                                  className="w-full bg-transparent focus:bg-background focus:border focus:border-border rounded px-1 focus:outline-none text-right font-mono" />
+                              </td>
+                              <td className="px-2 py-1 text-right font-mono text-muted-foreground">
+                                {(it.quantity * it.unitPrice).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </td>
+                              <td className="px-2 py-1">
+                                <button onClick={() => deleteItem(ch.id, it.id)}
+                                  className="text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all">
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {expandedChapters.includes(ch.id) && ch.items.length === 0 && (
+                    <p className="text-xs text-muted-foreground px-3 py-2 italic">Capítulo vazio — será ignorado na importação</p>
+                  )}
+                </div>
+              ))}
+
+              {error && (
+                <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-lg px-3 py-2 mt-3">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}
                 </div>
               )}
             </div>
+          )}
 
-            {/* Modo de importação (só para Excel) */}
-            {!isPdf && (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setMode("auto")}
-                  className={cn(
-                    "w-full flex items-start gap-3 p-3 text-left transition-colors",
-                    mode === "auto" ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-card hover:bg-muted/40"
-                  )}>
-                  <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
-                    mode === "auto" ? "border-emerald-600" : "border-muted-foreground")}>
-                    {mode === "auto" && <div className="w-2 h-2 rounded-full bg-emerald-600" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Importação direta {mode === "auto" && <span className="text-xs text-emerald-600 font-normal">(recomendado)</span>}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Detecta automaticamente colunas CÓDIGO, DESCRIÇÃO, UNIDADE, QUANTIDADE e PREÇO UNIT. Rápido, sem IA.
-                    </p>
-                  </div>
-                </button>
-                <div className="border-t border-border" />
-                <button
-                  type="button"
-                  onClick={() => setMode("ai")}
-                  className={cn(
-                    "w-full flex items-start gap-3 p-3 text-left transition-colors",
-                    mode === "ai" ? "bg-violet-50 dark:bg-violet-950/20" : "bg-card hover:bg-muted/40"
-                  )}>
-                  <div className={cn("w-4 h-4 mt-0.5 rounded-full border-2 flex-shrink-0 flex items-center justify-center",
-                    mode === "ai" ? "border-violet-600" : "border-muted-foreground")}>
-                    {mode === "ai" && <div className="w-2 h-2 rounded-full bg-violet-600" />}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Interpretar com IA</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Claude lê e estrutura qualquer formato, inclusive planilhas sem padrão definido. Requer chave Anthropic.
-                    </p>
-                  </div>
-                </button>
-              </div>
-            )}
-
-            {isPdf && (
-              <div className="flex items-start gap-3 bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3">
-                <Sparkles className="w-4 h-4 text-violet-600 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-muted-foreground">
-                  PDFs são sempre interpretados pela IA. Requer <code className="text-violet-600">ANTHROPIC_API_KEY</code> configurado.
-                </p>
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/10 border border-red-200 rounded-lg px-3 py-2">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />{error}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">Cancelar</button>
-              <button onClick={handleUpload} disabled={!file || isUploading}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors",
-                  (mode === "ai" || isPdf) ? "bg-violet-600 hover:bg-violet-700" : "bg-emerald-600 hover:bg-emerald-700"
-                )}>
-                {isUploading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />{mode === "ai" || isPdf ? "Processando com IA..." : "Importando..."}</>
-                  : <><Upload className="w-4 h-4" />Importar Planilha</>
-                }
+          {/* ── STEP 3: Done ── */}
+          {step === "done" && (
+            <div className="text-center py-6 space-y-3">
+              <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
+              <p className="font-heading font-bold text-lg">Importação concluída!</p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">{result?.chaptersCreated}</span> capítulos e{" "}
+                <span className="font-semibold text-foreground">{result?.itemsCreated}</span> itens importados.
+              </p>
+              <p className="text-xs text-emerald-600 font-medium">✓ Dados revisados e salvos</p>
+              <button onClick={onSuccess} className="px-6 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90">
+                Ver Orçamento
               </button>
             </div>
+          )}
+        </div>
+
+        {/* Footer for edit step */}
+        {step === "edit" && (
+          <div className="flex items-center justify-between gap-3 p-4 border-t border-border flex-shrink-0 bg-card">
+            <button onClick={() => setStep("upload")} className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">
+              <ChevronLeft className="w-4 h-4" /> Voltar
+            </button>
+            <button onClick={handleSave} disabled={isSaving || totalItems === 0}
+              className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+              {isSaving
+                ? <><Loader2 className="w-4 h-4 animate-spin" />Salvando...</>
+                : <><CheckCircle2 className="w-4 h-4" />Confirmar e Importar ({totalItems} itens)</>
+              }
+            </button>
           </div>
         )}
       </div>

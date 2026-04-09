@@ -235,6 +235,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
+  // ── JSON path: save pre-edited chapters ──────────────────────────────────
+  const ct = req.headers.get("content-type") ?? "";
+  if (ct.includes("application/json")) {
+    let body: { orcamentoId: string; chapters: ImportedChapter[] };
+    try { body = await req.json(); } catch {
+      return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+    }
+    const { orcamentoId, chapters } = body;
+    if (!orcamentoId || !chapters?.length) {
+      return NextResponse.json({ error: "orcamentoId e chapters são obrigatórios" }, { status: 400 });
+    }
+    const orcamento = await prisma.orcamento.findFirst({
+      where: { id: orcamentoId, companyId: session.user.companyId },
+    });
+    if (!orcamento) return NextResponse.json({ error: "Orçamento não encontrado" }, { status: 404 });
+    const result = await saveChapters(chapters, orcamentoId, Number(orcamento.bdiPercentage));
+    return NextResponse.json({ success: true, mode: "edited", ...result });
+  }
+
+  // ── FormData path ─────────────────────────────────────────────────────────
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -246,6 +266,8 @@ export async function POST(req: NextRequest) {
   const orcamentoId = formData.get("orcamentoId") as string | null;
   // mode: "auto" (padrão), "direct" (sem IA), "ai" (força IA)
   const mode = (formData.get("mode") as string | null) ?? "auto";
+  // preview: se "true", retorna chapters sem salvar no banco
+  const preview = formData.get("preview") === "true";
 
   if (!file || !orcamentoId) {
     return NextResponse.json({ error: "Arquivo e orcamentoId são obrigatórios" }, { status: 400 });
@@ -280,6 +302,9 @@ export async function POST(req: NextRequest) {
   if (isExcel && mode !== "ai") {
     const chapters = parseExcelDirect(buffer);
     if (chapters && chapters.length > 0) {
+      if (preview) {
+        return NextResponse.json({ preview: true, chapters });
+      }
       const result = await saveChapters(chapters, orcamentoId, Number(orcamento.bdiPercentage));
       return NextResponse.json({
         success: true,
@@ -404,6 +429,10 @@ ${textContent}`,
   const chapters = parsed.chapters ?? [];
   if (chapters.length === 0) {
     return NextResponse.json({ error: "Nenhum item encontrado no arquivo" }, { status: 400 });
+  }
+
+  if (preview) {
+    return NextResponse.json({ preview: true, chapters });
   }
 
   const result = await saveChapters(chapters, orcamentoId, Number(orcamento.bdiPercentage));
