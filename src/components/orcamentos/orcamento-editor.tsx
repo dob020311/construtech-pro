@@ -537,9 +537,10 @@ function OrcamentoItemRow({ item, itemIndex, bdi, onUpdate, onDelete, isUpdating
         {editing === "item" ? (
           <input autoFocus value={itemVal}
             onChange={e => setItemVal(e.target.value)}
-            onBlur={() => { setEditing(null); /* item index is display-only, no save */ }}
+            onBlur={() => { setEditing(null); }}
             onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditing(null); }}
-            className="w-full text-xs font-mono text-center px-1 py-0.5 rounded border border-primary bg-background focus:outline-none" />
+            placeholder="ex: 2.1.2"
+            className="w-full text-xs font-mono text-center px-1 py-0.5 rounded border border-primary bg-background focus:outline-none placeholder:text-muted-foreground/40" />
         ) : (
           <button onClick={() => setEditing("item")}
             className="w-full text-xs text-muted-foreground font-mono text-center px-1 py-0.5 rounded hover:bg-muted/50 hover:text-foreground transition-colors">
