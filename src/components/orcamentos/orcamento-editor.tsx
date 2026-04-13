@@ -853,19 +853,302 @@ function CurvaAbcModal({ items, onClose }: {
   );
 }
 
+// ── Chapter name suggestions ─────────────────────────────────────────────────
+const CHAPTER_SUGGESTIONS = [
+  // ── Serviços Gerais e Preliminares
+  "Serviços Preliminares",
+  "Serviços Técnicos e Administrativos",
+  "Serviços Topográficos",
+  "Placa de Obra e Sinalização",
+  "Limpeza do Terreno",
+  "Demolições e Remoções",
+  "Locação da Obra",
+  "Instalações Provisórias",
+  "Tapumes e Andaimes",
+  "Projetos e Licenças",
+  // ── Terraplanagem
+  "Terraplanagem",
+  "Terraplenagem e Escavações",
+  "Escavação Mecânica",
+  "Aterro e Compactação",
+  "Reaterro",
+  "Carga e Transporte de Terra",
+  "Bota-fora",
+  // ── Fundações e Estrutura de Contenção
+  "Fundações",
+  "Fundações Superficiais",
+  "Fundações Profundas",
+  "Estacas e Tubulões",
+  "Blocos de Fundação",
+  "Vigas Baldrame",
+  "Radier",
+  "Contenção e Arrimo",
+  "Cortina de Estacas",
+  "Muro de Arrimo",
+  // ── Estrutura
+  "Estrutura",
+  "Estrutura de Concreto Armado",
+  "Estrutura de Concreto Pré-moldado",
+  "Estrutura Metálica",
+  "Estrutura de Madeira",
+  "Pilares e Vigas",
+  "Lajes",
+  "Escadas Estruturais",
+  "Reservatório Estrutural",
+  // ── Alvenaria
+  "Alvenaria",
+  "Alvenaria de Vedação",
+  "Alvenaria Estrutural",
+  "Paredes de Tijolo Cerâmico",
+  "Paredes de Bloco de Concreto",
+  "Paredes de Bloco de Vidro",
+  "Divisórias Internas",
+  "Shaft e Dutos",
+  // ── Cobertura
+  "Cobertura",
+  "Telhado",
+  "Estrutura de Cobertura",
+  "Telhas Cerâmicas",
+  "Telhas Metálicas",
+  "Telhas de Fibrocimento",
+  "Cobertura em Laje",
+  "Calhas e Rufos",
+  "Rufos e Arremates",
+  "Cobertura Translúcida",
+  // ── Impermeabilização e Isolamento
+  "Impermeabilização",
+  "Impermeabilização de Fundação",
+  "Impermeabilização de Lajes",
+  "Impermeabilização de Reservatório",
+  "Impermeabilização de Banheiro",
+  "Isolamento Térmico",
+  "Isolamento Acústico",
+  // ── Instalações Hidrossanitárias
+  "Instalações Hidrossanitárias",
+  "Instalações Hidráulicas",
+  "Instalações Sanitárias",
+  "Instalações de Água Fria",
+  "Instalações de Água Quente",
+  "Instalações de Esgoto",
+  "Instalações de Águas Pluviais",
+  "Sistema de Captação de Água de Chuva",
+  "Reservatório de Água",
+  "Poço e Sistema de Bombeamento",
+  "Fossa Séptica e Sumidouro",
+  "Estação de Tratamento de Esgoto",
+  // ── Instalações Elétricas
+  "Instalações Elétricas",
+  "Instalações Elétricas Baixa Tensão",
+  "Instalações de Iluminação",
+  "Tomadas e Interruptores",
+  "Quadros de Distribuição",
+  "Subestação Elétrica",
+  "Rede de Aterramento",
+  "Sistema de Proteção contra Descargas Atmosféricas",
+  "SPDA – Para-Raios",
+  "Gerador de Energia",
+  "Energia Solar Fotovoltaica",
+  "Instalações de Telecomunicações",
+  // ── Instalações Especiais
+  "Instalações de Climatização",
+  "Ar-condicionado",
+  "Ventilação Mecânica",
+  "Exaustão Mecânica",
+  "Instalações de Gás",
+  "Instalações de GLP",
+  "Instalações de GN",
+  "Sistema de Combate a Incêndio",
+  "Sprinklers",
+  "Hidrantes e Extintores",
+  "Sistema de Alarme de Incêndio",
+  "Sistema de Segurança e CCTV",
+  "Sistema de Controle de Acesso",
+  "Sistema de Automação Predial",
+  "Elevadores e Escadas Rolantes",
+  "Elevador",
+  "Plataforma Acessível",
+  // ── Revestimentos
+  "Revestimentos",
+  "Revestimentos Internos",
+  "Revestimentos Externos",
+  "Chapisco e Reboco",
+  "Argamassa de Regularização",
+  "Emboço e Reboco",
+  "Revestimento Cerâmico",
+  "Azulejos e Revestimento de Paredes",
+  "Revestimento em Porcelanato",
+  "Revestimento em Pedra Natural",
+  "Revestimento em Mármore e Granito",
+  "Revestimento em Gesso",
+  "Revestimento em Dryvit/EIFS",
+  "Revestimento Texturizado",
+  "Fachada Ventilada",
+  "Curtain Wall",
+  // ── Pisos
+  "Pisos e Pavimentos",
+  "Piso Cerâmico",
+  "Piso em Porcelanato",
+  "Piso em Pedra Natural",
+  "Piso em Mármore",
+  "Piso em Madeira",
+  "Piso Laminado",
+  "Piso Vinílico",
+  "Piso Emborrachado",
+  "Piso de Concreto Polido",
+  "Contrapiso",
+  "Regularização de Piso",
+  "Piso Industrial Epóxi",
+  "Pavimentação Externa",
+  "Piso Intertravado",
+  "Calçada e Passeio",
+  "Piso em Asfalto",
+  // ── Forros
+  "Forros e Tetos",
+  "Forro de Gesso",
+  "Forro de PVC",
+  "Forro de Madeira",
+  "Forro Modular",
+  "Forro de Drywall",
+  // ── Esquadrias
+  "Esquadrias",
+  "Portas e Janelas",
+  "Esquadrias de Alumínio",
+  "Esquadrias de Madeira",
+  "Esquadrias de PVC",
+  "Esquadrias de Ferro",
+  "Esquadrias de Vidro",
+  "Portas de Madeira",
+  "Portas de Alumínio",
+  "Portas Corta-fogo",
+  "Portas Automáticas",
+  "Portões",
+  "Grades e Telas",
+  "Corrimão e Guarda-corpo",
+  // ── Vidros
+  "Vidros e Espelhos",
+  "Vidros Comuns",
+  "Vidros Laminados",
+  "Vidros Temperados",
+  "Espelhos",
+  // ── Pintura
+  "Pintura",
+  "Pintura Interna",
+  "Pintura Externa",
+  "Pintura de Fachada",
+  "Pintura de Piso",
+  "Pintura de Estrutura Metálica",
+  "Pintura Epóxi",
+  "Textura e Grafiato",
+  // ── Louças, Metais e Acessórios
+  "Louças, Metais e Acessórios",
+  "Louças Sanitárias",
+  "Metais Sanitários",
+  "Bancadas e Tampos",
+  "Acessórios de Banheiro",
+  "Equipamentos de Cozinha",
+  // ── Obras de Arte
+  "Drenagem",
+  "Drenagem Pluvial",
+  "Sistema de Drenagem",
+  "Galerias e Bocas de Lobo",
+  "Sarjetas e Meio-fio",
+  "Canalização",
+  "Obras de Arte Correntes",
+  "Pontes e Passarelas",
+  "Muros e Cercas",
+  "Muro de Fachada",
+  "Cerca e Gradil",
+  // ── Urbanização e Paisagismo
+  "Urbanização",
+  "Paisagismo",
+  "Jardins e Gramados",
+  "Plantio e Revegetação",
+  "Arborização",
+  "Quadra Esportiva",
+  "Playground",
+  "Área de Lazer",
+  "Piscina",
+  "Churrasqueira",
+  // ── Obras Viárias
+  "Terraplenagem Viária",
+  "Pavimentação Asfáltica",
+  "Sinalização Viária",
+  "Sinalização Horizontal",
+  "Sinalização Vertical",
+  "Iluminação Pública",
+  "Calçamento e Guias",
+  // ── Outros
+  "Limpeza Final e Entrega",
+  "Limpeza Geral",
+  "Serviços Complementares",
+  "Obras Complementares",
+  "Adaptações e Reformas",
+  "Adequação de Acessibilidade",
+  "Recuperação Estrutural",
+  "Reforço Estrutural",
+  "Serviços de Engenharia",
+  "Gerenciamento e Fiscalização",
+  "Equipamentos e Mobiliário",
+  "Mobiliário Fixo",
+  "Ar Comprimido",
+  "Sistema de Vácuo",
+  "Gases Medicinais",
+  "Estação de Tratamento de Água",
+].sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+function normalizeSearch(s: string) {
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 // ── Add Chapter Modal ────────────────────────────────────────────────────────
 function AddChapterModal({ nextOrder, onSave, onClose, isPending }: {
   nextOrder: number; onSave: (code: string, name: string) => void; onClose: () => void; isPending: boolean;
 }) {
   const [name, setName] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const listRef = useRef<HTMLUListElement>(null);
   const code = String(nextOrder).padStart(2, "0");
+
+  const suggestions = name.trim().length >= 2
+    ? CHAPTER_SUGGESTIONS.filter(s =>
+        normalizeSearch(s).includes(normalizeSearch(name.trim()))
+      ).slice(0, 10)
+    : [];
+
+  const open = showSuggestions && suggestions.length > 0;
+
+  const pick = (val: string) => {
+    setName(val);
+    setShowSuggestions(false);
+    setActiveIdx(0);
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === "Enter" && name.trim()) onSave(code, name.trim());
+      return;
+    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(suggestions[activeIdx]); }
+    else if (e.key === "Escape") { setShowSuggestions(false); }
+  };
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (listRef.current) {
+      const el = listRef.current.children[activeIdx] as HTMLElement;
+      el?.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIdx]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-heading font-bold">Novo Capítulo</h2>
+          <h2 className="text-lg font-heading font-bold">Nova Etapa</h2>
           <button onClick={onClose}><X className="w-5 h-5 text-muted-foreground" /></button>
         </div>
         <div className="space-y-4">
@@ -873,12 +1156,38 @@ function AddChapterModal({ nextOrder, onSave, onClose, isPending }: {
             <label className="block text-sm font-medium mb-1.5">Código</label>
             <input value={code} disabled className="w-full px-3 py-2 bg-muted border border-border rounded-lg text-sm opacity-60" />
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5">Nome do Capítulo *</label>
-            <input autoFocus type="text" value={name} onChange={e => setName(e.target.value)}
+          <div className="relative">
+            <label className="block text-sm font-medium mb-1.5">Nome da Etapa *</label>
+            <input
+              autoFocus
+              type="text"
+              value={name}
+              onChange={e => { setName(e.target.value); setShowSuggestions(true); setActiveIdx(0); }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              onKeyDown={handleKey}
               placeholder="Ex: Serviços Preliminares"
               className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              onKeyDown={e => { if (e.key === "Enter" && name.trim()) onSave(code, name.trim()); }} />
+            />
+            {open && (
+              <ul ref={listRef}
+                className="absolute z-10 left-0 right-0 bg-card border border-border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
+                {suggestions.map((s, i) => (
+                  <li key={s}>
+                    <button
+                      type="button"
+                      onMouseDown={() => pick(s)}
+                      className={cn(
+                        "w-full text-left px-3 py-2 text-sm transition-colors",
+                        i === activeIdx ? "bg-primary text-white" : "hover:bg-muted"
+                      )}>
+                      {s}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">Digite 2+ letras para ver sugestões</p>
           </div>
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted">Cancelar</button>
