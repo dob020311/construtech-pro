@@ -6,7 +6,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Settings, BarChart3,
   Download, Loader2, X, FileSpreadsheet, FileText, Sparkles, Send,
-  Cpu, Package, HardHat, Wrench, ChevronLeft,
+  Cpu, Package, HardHat, Wrench, ChevronLeft, Layers,
   Upload, Mic, MicOff, MessageSquare, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -38,6 +38,15 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
   const [showAiCommand, setShowAiCommand] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [quickActionChapter, setQuickActionChapter] = useState<"item" | "composition" | null>(null);
+
+  // Close quick-action dropdowns on outside click
+  useEffect(() => {
+    if (!quickActionChapter) return;
+    const handler = () => setQuickActionChapter(null);
+    document.addEventListener("click", handler, { capture: true, once: true });
+    return () => document.removeEventListener("click", handler, { capture: true });
+  }, [quickActionChapter]);
 
   const handleExportExcel = async () => {
     setIsExportingExcel(true);
@@ -353,11 +362,73 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
           )}
         </div>
 
-        <div className="px-4 py-3 border-t border-border bg-muted/20">
+        {/* Quick-action bar */}
+        <div className="px-4 py-3 border-t border-border bg-muted/20 flex items-center gap-2 flex-wrap">
+          {/* Adicionar Etapa */}
           <button onClick={() => setShowAddChapter(true)}
-            className="flex items-center gap-2 text-sm text-primary hover:text-primary-700 font-medium transition-colors">
-            <Plus className="w-4 h-4" /> Adicionar Capítulo
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 dark:bg-blue-950/30 dark:border-blue-700 dark:text-blue-400 transition-colors">
+            <Layers className="w-3.5 h-3.5" /> Adicionar Etapa
           </button>
+
+          {/* Adicionar Composição */}
+          {orcamento.chapters.length === 0 ? (
+            <button disabled title="Crie uma etapa primeiro"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-muted border border-border text-muted-foreground opacity-50 cursor-not-allowed">
+              <Cpu className="w-3.5 h-3.5" /> Adicionar Composição
+            </button>
+          ) : orcamento.chapters.length === 1 ? (
+            <button onClick={() => setAiCompositionChapterId(orcamento.chapters[0].id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-400 transition-colors">
+              <Cpu className="w-3.5 h-3.5" /> Adicionar Composição
+            </button>
+          ) : (
+            <div className="relative">
+              <button onClick={() => setQuickActionChapter(quickActionChapter === "composition" ? null : "composition")}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-400 transition-colors">
+                <Cpu className="w-3.5 h-3.5" /> Adicionar Composição <ChevronDown className="w-3 h-3 ml-0.5" />
+              </button>
+              {quickActionChapter === "composition" && (
+                <div className="absolute bottom-full mb-1 left-0 bg-card border border-border rounded-lg shadow-lg z-20 min-w-48 py-1">
+                  {orcamento.chapters.map(ch => (
+                    <button key={ch.id} onClick={() => { setAiCompositionChapterId(ch.id); setQuickActionChapter(null); }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors truncate">
+                      <span className="font-mono text-muted-foreground mr-1.5">{ch.code}</span>{ch.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Adicionar Insumo */}
+          {orcamento.chapters.length === 0 ? (
+            <button disabled title="Crie uma etapa primeiro"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-muted border border-border text-muted-foreground opacity-50 cursor-not-allowed">
+              <Package className="w-3.5 h-3.5" /> Adicionar Insumo
+            </button>
+          ) : orcamento.chapters.length === 1 ? (
+            <button onClick={() => setAddItemChapterId(orcamento.chapters[0].id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-400 transition-colors">
+              <Package className="w-3.5 h-3.5" /> Adicionar Insumo
+            </button>
+          ) : (
+            <div className="relative">
+              <button onClick={() => setQuickActionChapter(quickActionChapter === "item" ? null : "item")}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-400 transition-colors">
+                <Package className="w-3.5 h-3.5" /> Adicionar Insumo <ChevronDown className="w-3 h-3 ml-0.5" />
+              </button>
+              {quickActionChapter === "item" && (
+                <div className="absolute bottom-full mb-1 left-0 bg-card border border-border rounded-lg shadow-lg z-20 min-w-48 py-1">
+                  {orcamento.chapters.map(ch => (
+                    <button key={ch.id} onClick={() => { setAddItemChapterId(ch.id); setQuickActionChapter(null); }}
+                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors truncate">
+                      <span className="font-mono text-muted-foreground mr-1.5">{ch.code}</span>{ch.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="border-t-2 border-border bg-muted/30 px-4 py-3 flex justify-end items-center gap-8">
