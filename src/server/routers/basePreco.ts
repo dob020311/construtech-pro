@@ -297,4 +297,44 @@ export const basePrecoRouter = createTRPCRouter({
 
       return items;
     }),
+
+  // ── Search items across bases (v2) ─────────────────────────────────────────
+  search: protectedProcedure
+    .input(
+      z.object({
+        q: z.string().min(1),
+        baseId: z.string().optional(),
+        limit: z.number().default(40),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const companyId = ctx.session.user.companyId;
+
+      const bases = await ctx.prisma.basePreco.findMany({
+        where: { companyId, isActive: true },
+        select: { id: true, name: true, source: true },
+      });
+
+      if (bases.length === 0) return { items: [], bases: [] };
+
+      const baseIds = input.baseId
+        ? [input.baseId]
+        : bases.map((b) => b.id);
+
+      const items = await ctx.prisma.basePrecoItem.findMany({
+        where: {
+          baseId: { in: baseIds },
+          OR: [
+            { code: { contains: input.q, mode: "insensitive" } },
+            { description: { contains: input.q, mode: "insensitive" } },
+            { category: { contains: input.q, mode: "insensitive" } },
+          ],
+        },
+        take: Math.min(input.limit, 100),
+        orderBy: { code: "asc" },
+        include: { base: { select: { id: true, name: true, source: true } } },
+      });
+
+      return { items, bases };
+    }),
 });

@@ -6,7 +6,7 @@ import { trpc } from "@/lib/trpc";
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Settings, BarChart3,
   Download, Loader2, X, FileSpreadsheet, FileText, Sparkles, Send,
-  Cpu, Package, HardHat, Wrench, ChevronLeft, Layers,
+  Cpu, Package, HardHat, Wrench, ChevronLeft, Layers, Search, Database,
   Upload, Mic, MicOff, MessageSquare, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -17,7 +17,17 @@ import autoTable from "jspdf-autotable";
 
 interface OrcamentoEditorProps { id: string; }
 
-interface OrcItem { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; order: number; }
+const GRID_COLS = "36px 110px 88px 1fr 60px 90px 108px 108px 116px 36px";
+
+const BASE_COLORS: Record<string, string> = {
+  SINAPI:  "bg-blue-100 text-blue-700 border-blue-200",
+  SICRO:   "bg-orange-100 text-orange-700 border-orange-200",
+  ORSE:    "bg-green-100 text-green-700 border-green-200",
+  SEINFRA: "bg-purple-100 text-purple-700 border-purple-200",
+  CUSTOM:  "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+interface OrcItem { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; sourceCode: string | null; order: number; }
 interface OrcChapter { id: string; code: string; name: string; order: number; items: OrcItem[]; }
 interface OrcamentoData {
   id: string; name: string; bdiPercentage: unknown; totalValue: unknown; totalWithBdi: unknown;
@@ -39,6 +49,7 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [quickActionChapter, setQuickActionChapter] = useState<"item" | "composition" | null>(null);
+  const [showBaseSearch, setShowBaseSearch] = useState(false);
 
   // Close quick-action dropdowns on outside click
   useEffect(() => {
@@ -240,6 +251,13 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setShowBaseSearch(v => !v)}
+            className={cn("flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors",
+              showBaseSearch
+                ? "border-amber-400 bg-amber-500 text-white"
+                : "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/30 dark:border-amber-700 dark:text-amber-400")}>
+            <Database className="w-3.5 h-3.5" /> Base de Composições
+          </button>
           <button onClick={() => setShowImportModal(true)}
             className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:bg-violet-950/30 dark:border-violet-700 dark:text-violet-400 transition-colors">
             <Upload className="w-3.5 h-3.5" /> Importar Planilha
@@ -282,6 +300,16 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
         />
       )}
 
+      {/* Base de Composições */}
+      {showBaseSearch && (
+        <BaseSearchPanel
+          orcamento={orcamento}
+          bdi={Number(orcamento.bdiPercentage)}
+          onItemAdded={() => utils.orcamento.getById.invalidate({ id })}
+          onClose={() => setShowBaseSearch(false)}
+        />
+      )}
+
       {/* Summary bar */}
       <div className="grid grid-cols-4 gap-3">
         {[
@@ -298,59 +326,71 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
       </div>
 
       {/* Spreadsheet */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl overflow-x-auto">
+        <div className="min-w-[900px]">
         <div className="grid bg-muted/50 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide"
-          style={{ gridTemplateColumns: "2fr 5fr 80px 100px 120px 130px 32px" }}>
-          {["Código", "Descrição", "Und", "Quantidade", "Preço Unit.", "Total", ""].map((h) => (
-            <div key={h} className="px-3 py-2.5">{h}</div>
+          style={{ gridTemplateColumns: GRID_COLS }}>
+          {["#", "Código", "Base", "Descrição", "Und", "Qtd", "Vlr Unit.", "Vlr c/BDI", "Total", ""].map((h, i) => (
+            <div key={i} className={cn("px-2 py-2.5", i >= 5 && i <= 8 ? "text-right" : "")}>{h}</div>
           ))}
         </div>
 
         <div className="divide-y divide-border">
           {orcamento.chapters.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
-              <p className="text-sm">Nenhum capítulo criado. Clique em "Adicionar Capítulo" abaixo.</p>
+              <p className="text-sm">Nenhuma etapa criada. Use os botões abaixo para começar.</p>
             </div>
           ) : (
             orcamento.chapters.map((chapter) => {
               const isExpanded = expandedChapters.includes(chapter.id);
               const chapterTotal = chapter.items.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+              const chapterTotalBdi = chapterTotal * (1 + Number(orcamento.bdiPercentage) / 100);
               return (
                 <div key={chapter.id}>
                   <button onClick={() => toggleChapter(chapter.id)}
                     className="w-full grid items-center bg-muted/30 hover:bg-muted/50 transition-colors"
-                    style={{ gridTemplateColumns: "2fr 5fr 80px 100px 120px 130px 32px" }}>
-                    <div className="px-3 py-2.5 flex items-center gap-2 col-span-1">
+                    style={{ gridTemplateColumns: GRID_COLS }}>
+                    <div className="px-2 py-2.5 flex items-center justify-center">
                       {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                    </div>
+                    <div className="px-2 py-2.5">
                       <span className="font-mono font-bold text-xs">{chapter.code}</span>
                     </div>
-                    <div className="px-3 py-2.5 col-span-4 text-left">
+                    <div className="px-2 py-2.5 col-span-5 text-left">
                       <span className="font-heading font-semibold text-sm">{chapter.name}</span>
                       <span className="text-xs text-muted-foreground ml-2">({chapter.items.length} itens)</span>
                     </div>
-                    <div className="px-3 py-2.5 text-right font-mono font-bold text-sm">{formatCurrency(chapterTotal)}</div>
-                    <div className="px-3 py-2.5" />
+                    <div className="px-2 py-2.5 text-right font-mono text-xs text-muted-foreground">{formatCurrency(chapterTotal)}</div>
+                    <div className="px-2 py-2.5 text-right font-mono font-bold text-sm text-primary">{formatCurrency(chapterTotalBdi)}</div>
+                    <div className="px-2 py-2.5" />
                   </button>
 
                   {isExpanded && (
                     <>
-                      {chapter.items.map((item) => (
+                      {chapter.items.map((item, idx) => (
                         <OrcamentoItemRow key={item.id} item={item}
+                          itemIndex={idx + 1}
+                          bdi={Number(orcamento.bdiPercentage)}
                           onUpdate={(data) => updateItem({ id: item.id, ...data })}
                           onDelete={() => deleteItem({ id: item.id })}
                           isUpdating={isUpdating} />
                       ))}
                       <div className="grid items-center bg-muted/10 border-t border-dashed border-border/50"
-                        style={{ gridTemplateColumns: "2fr 5fr 80px 100px 120px 130px 32px" }}>
-                        <div className="px-3 py-2 col-span-6 flex items-center gap-3">
+                        style={{ gridTemplateColumns: GRID_COLS }}>
+                        <div className="px-2 py-2 col-span-10 flex items-center gap-3">
                           <button onClick={() => setAddItemChapterId(chapter.id)}
                             className="flex items-center gap-1.5 text-xs text-primary hover:text-primary/80 font-medium transition-colors">
-                            <Plus className="w-3 h-3" /> Adicionar item manualmente
+                            <Plus className="w-3 h-3" /> Adicionar insumo
                           </button>
                           <span className="text-border">|</span>
                           <button onClick={() => setAiCompositionChapterId(chapter.id)}
                             className="flex items-center gap-1.5 text-xs text-violet-600 hover:text-violet-700 font-medium transition-colors">
-                            <Cpu className="w-3 h-3" /> Gerar composição com IA
+                            <Cpu className="w-3 h-3" /> Composição com IA
+                          </button>
+                          <span className="text-border">|</span>
+                          <button onClick={() => { setShowBaseSearch(true); }}
+                            className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 font-medium transition-colors">
+                            <Database className="w-3 h-3" /> Buscar na base
                           </button>
                         </div>
                       </div>
@@ -360,6 +400,7 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
               );
             })
           )}
+        </div>
         </div>
 
         {/* Quick-action bar */}
@@ -451,8 +492,10 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
 }
 
 // ── Item Row ────────────────────────────────────────────────────────────────
-function OrcamentoItemRow({ item, onUpdate, onDelete, isUpdating }: {
-  item: { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; };
+function OrcamentoItemRow({ item, itemIndex, bdi, onUpdate, onDelete, isUpdating }: {
+  item: { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; sourceCode: string | null; };
+  itemIndex: number;
+  bdi: number;
   onUpdate: (data: { quantity?: number; unitPrice?: number }) => void;
   onDelete: () => void;
   isUpdating: boolean;
@@ -467,42 +510,256 @@ function OrcamentoItemRow({ item, onUpdate, onDelete, isUpdating }: {
     if (!isNaN(value) && value > 0) onUpdate({ [field]: value });
   };
 
+  const unitPrice = Number(item.unitPrice);
+  const totalPrice = Number(item.totalPrice);
+  const unitPriceBdi = unitPrice * (1 + bdi / 100);
+  const totalBdi = totalPrice * (1 + bdi / 100);
+
+  const sourceName = item.source?.toUpperCase() ?? null;
+  const baseBadgeClass = sourceName ? (BASE_COLORS[sourceName] ?? BASE_COLORS.CUSTOM) : null;
+
   return (
-    <div className="grid items-center hover:bg-accent/30 transition-colors border-b border-border/50 last:border-0 group"
-      style={{ gridTemplateColumns: "2fr 5fr 80px 100px 120px 130px 32px" }}>
-      <div className="px-3 py-1.5">
-        <span className="font-mono text-xs text-muted-foreground">{item.code}</span>
-        {item.source && <span className="block text-[10px] text-muted-foreground/60">{item.source}</span>}
+    <div className="grid items-center hover:bg-accent/30 transition-colors border-b border-border/50 last:border-0 group min-w-[900px]"
+      style={{ gridTemplateColumns: GRID_COLS }}>
+      {/* # */}
+      <div className="px-2 py-1.5 text-center">
+        <span className="text-xs text-muted-foreground font-mono">{itemIndex}</span>
       </div>
-      <div className="px-3 py-1.5"><p className="text-sm">{item.description}</p></div>
-      <div className="px-3 py-1.5 text-sm text-center font-mono">{item.unit}</div>
-      <div className="px-1.5 py-1">
+      {/* Código */}
+      <div className="px-2 py-1.5">
+        <span className="font-mono text-xs text-muted-foreground leading-tight block truncate">{item.code}</span>
+        {item.sourceCode && item.sourceCode !== item.code && (
+          <span className="text-[10px] text-muted-foreground/50 font-mono">{item.sourceCode}</span>
+        )}
+      </div>
+      {/* Base */}
+      <div className="px-2 py-1.5">
+        {baseBadgeClass && (
+          <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border", baseBadgeClass)}>
+            {sourceName}
+          </span>
+        )}
+      </div>
+      {/* Descrição */}
+      <div className="px-2 py-1.5"><p className="text-xs leading-tight">{item.description}</p></div>
+      {/* Und */}
+      <div className="px-2 py-1.5 text-xs text-center font-mono">{item.unit}</div>
+      {/* Qtd */}
+      <div className="px-1 py-1">
         {editing === "quantity" ? (
           <input autoFocus value={qty} onChange={(e) => setQty(e.target.value)} onBlur={() => handleBlur("quantity")}
-            className="w-full text-sm font-mono text-right px-2 py-0.5 rounded border border-primary bg-background focus:outline-none" />
+            className="w-full text-xs font-mono text-right px-1.5 py-0.5 rounded border border-primary bg-background focus:outline-none" />
         ) : (
-          <button onClick={() => setEditing("quantity")} className="w-full text-sm font-mono text-right px-2 py-0.5 rounded hover:bg-muted/50">
+          <button onClick={() => setEditing("quantity")} className="w-full text-xs font-mono text-right px-1.5 py-0.5 rounded hover:bg-muted/50">
             {Number(item.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}
           </button>
         )}
       </div>
-      <div className="px-1.5 py-1">
+      {/* Vlr Unit */}
+      <div className="px-1 py-1">
         {editing === "unitPrice" ? (
           <input autoFocus value={price} onChange={(e) => setPrice(e.target.value)} onBlur={() => handleBlur("unitPrice")}
-            className="w-full text-sm font-mono text-right px-2 py-0.5 rounded border border-primary bg-background focus:outline-none" />
+            className="w-full text-xs font-mono text-right px-1.5 py-0.5 rounded border border-primary bg-background focus:outline-none" />
         ) : (
-          <button onClick={() => setEditing("unitPrice")} className="w-full text-sm font-mono text-right px-2 py-0.5 rounded hover:bg-muted/50">
-            {formatCurrency(Number(item.unitPrice))}
+          <button onClick={() => setEditing("unitPrice")} className="w-full text-xs font-mono text-right px-1.5 py-0.5 rounded hover:bg-muted/50">
+            {formatCurrency(unitPrice)}
           </button>
         )}
       </div>
-      <div className="px-3 py-1.5 text-sm font-mono text-right font-semibold">
-        {isUpdating && editing ? <Loader2 className="w-3 h-3 animate-spin ml-auto" /> : formatCurrency(Number(item.totalPrice))}
+      {/* Vlr c/BDI */}
+      <div className="px-2 py-1.5 text-xs font-mono text-right text-muted-foreground">
+        {formatCurrency(unitPriceBdi)}
       </div>
+      {/* Total */}
+      <div className="px-2 py-1.5 text-xs font-mono text-right font-semibold text-primary">
+        {isUpdating && editing ? <Loader2 className="w-3 h-3 animate-spin ml-auto" /> : formatCurrency(totalBdi)}
+      </div>
+      {/* Delete */}
       <div className="px-1 py-1 flex justify-center">
         <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all">
           <Trash2 className="w-3 h-3" />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Base de Composições Search Panel ─────────────────────────────────────────
+function BaseSearchPanel({ orcamento, bdi, onItemAdded, onClose }: {
+  orcamento: OrcamentoData;
+  bdi: number;
+  onItemAdded: () => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [selectedBaseId, setSelectedBaseId] = useState<string | null>(null);
+  const [targetChapterId, setTargetChapterId] = useState(orcamento.chapters[0]?.id ?? "");
+  const [addingCode, setAddingCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data, isFetching } = trpc.basePreco.search.useQuery(
+    { q: debouncedQ, baseId: selectedBaseId ?? undefined, limit: 50 },
+    { enabled: debouncedQ.length >= 2 }
+  );
+
+  const utils = trpc.useUtils();
+  const addItem = trpc.orcamento.addItem.useMutation({
+    onSuccess: () => { utils.orcamento.getById.invalidate(); onItemAdded(); setAddingCode(null); },
+    onError: (err) => { toast.error(err.message); setAddingCode(null); },
+  });
+
+  const handleAdd = (it: { code: string; description: string; unit: string; unitPrice: unknown; base: { name: string; source: string } }) => {
+    if (!targetChapterId) { toast.error("Selecione uma etapa"); return; }
+    const chapter = orcamento.chapters.find(c => c.id === targetChapterId);
+    if (!chapter) return;
+    setAddingCode(it.code);
+    addItem.mutate({
+      chapterId: targetChapterId,
+      code: it.code,
+      description: it.description,
+      unit: it.unit,
+      quantity: 1,
+      unitPrice: Number(it.unitPrice),
+      source: it.base.source,
+      sourceCode: it.code,
+      order: chapter.items.length + 1,
+    });
+  };
+
+  const allBases = data?.bases ?? [];
+
+  return (
+    <div className="bg-card border border-amber-200 dark:border-amber-700 rounded-xl overflow-hidden">
+      {/* Panel header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-700">
+        <div className="flex items-center gap-2">
+          <Database className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-semibold">Base de Composições e Preços</span>
+          <span className="text-xs text-muted-foreground">— busque SINAPI, SICRO, ORSE e bases próprias</span>
+        </div>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Search + chapter select row */}
+        <div className="flex gap-3 items-center">
+          <div className="flex-1 relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <input
+              autoFocus
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Pesquisar por código ou descrição (ex: 74209/001, alvenaria, concreto...)"
+              className="w-full pl-9 pr-4 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400"
+            />
+          </div>
+          {orcamento.chapters.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">Adicionar em:</span>
+              <select value={targetChapterId} onChange={e => setTargetChapterId(e.target.value)}
+                className="text-xs bg-background border border-border rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400/40 max-w-[200px]">
+                {orcamento.chapters.map(ch => (
+                  <option key={ch.id} value={ch.id}>{ch.code} – {ch.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
+        {/* Base filter chips */}
+        {allBases.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            <button onClick={() => setSelectedBaseId(null)}
+              className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
+                selectedBaseId === null ? "bg-amber-500 text-white border-amber-500" : "border-border hover:bg-muted")}>
+              Todas
+            </button>
+            {allBases.map(base => (
+              <button key={base.id} onClick={() => setSelectedBaseId(selectedBaseId === base.id ? null : base.id)}
+                className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
+                  selectedBaseId === base.id
+                    ? (BASE_COLORS[base.source.toUpperCase()] ?? BASE_COLORS.CUSTOM) + " border-current"
+                    : "border-border hover:bg-muted")}>
+                {base.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Results */}
+        <div className="border border-border rounded-lg overflow-hidden">
+          {/* Results header */}
+          <div className="grid bg-muted/50 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wide"
+            style={{ gridTemplateColumns: "110px 80px 1fr 56px 100px 100px 80px" }}>
+            {["Código", "Base", "Descrição / Ref. Técnica", "Und", "Vlr Unit.", "c/BDI", ""].map((h, i) => (
+              <div key={i} className={cn("px-2 py-2", i >= 4 ? "text-right" : "")}>{h}</div>
+            ))}
+          </div>
+
+          {debouncedQ.length < 2 ? (
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p>Digite pelo menos 2 caracteres para buscar</p>
+              <p className="text-xs mt-1 opacity-70">Pesquise por código (ex: 74209), serviço (ex: escavação) ou material</p>
+            </div>
+          ) : isFetching ? (
+            <div className="py-6 flex items-center justify-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Buscando...
+            </div>
+          ) : !data?.items.length ? (
+            <div className="py-8 text-center text-muted-foreground text-sm">
+              <p>Nenhuma composição encontrada para <strong>"{debouncedQ}"</strong></p>
+              <p className="text-xs mt-1 opacity-70">Importe planilhas SINAPI/SICRO em Bases de Preços para enriquecer a busca</p>
+            </div>
+          ) : (
+            <div className="max-h-72 overflow-y-auto divide-y divide-border/50">
+              {data.items.map(it => {
+                const sourceName = it.base.source.toUpperCase();
+                const badgeClass = BASE_COLORS[sourceName] ?? BASE_COLORS.CUSTOM;
+                const unitPriceBdi = Number(it.unitPrice) * (1 + bdi / 100);
+                const isAdding = addingCode === it.code;
+                return (
+                  <div key={it.id} className="grid items-center hover:bg-amber-50/50 dark:hover:bg-amber-950/10 transition-colors group"
+                    style={{ gridTemplateColumns: "110px 80px 1fr 56px 100px 100px 80px" }}>
+                    <div className="px-2 py-2">
+                      <span className="font-mono text-xs text-muted-foreground">{it.code}</span>
+                    </div>
+                    <div className="px-2 py-2">
+                      <span className={cn("inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border", badgeClass)}>
+                        {sourceName}
+                      </span>
+                    </div>
+                    <div className="px-2 py-2">
+                      <p className="text-xs leading-tight">{it.description}</p>
+                      {it.category && <p className="text-[10px] text-muted-foreground mt-0.5">{it.category}</p>}
+                    </div>
+                    <div className="px-2 py-2 text-xs font-mono text-center">{it.unit}</div>
+                    <div className="px-2 py-2 text-xs font-mono text-right">{formatCurrency(Number(it.unitPrice))}</div>
+                    <div className="px-2 py-2 text-xs font-mono text-right text-primary font-semibold">{formatCurrency(unitPriceBdi)}</div>
+                    <div className="px-2 py-2">
+                      <button
+                        onClick={() => handleAdd(it)}
+                        disabled={!targetChapterId || isAdding}
+                        className="w-full flex items-center justify-center gap-1 px-2 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-medium disabled:opacity-50 transition-colors">
+                        {isAdding ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                        {isAdding ? "" : "Usar"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {data?.items.length ? (
+          <p className="text-xs text-muted-foreground text-right">{data.items.length} resultado(s) — preço c/BDI calculado com {bdi}%</p>
+        ) : null}
       </div>
     </div>
   );
