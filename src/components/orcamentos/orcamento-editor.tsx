@@ -17,7 +17,7 @@ import autoTable from "jspdf-autotable";
 
 interface OrcamentoEditorProps { id: string; }
 
-const GRID_COLS = "36px 110px 88px 1fr 60px 90px 108px 108px 116px 36px";
+const GRID_COLS = "60px 110px 88px 1fr 60px 90px 108px 108px 116px 36px";
 
 const BASE_COLORS: Record<string, string> = {
   SINAPI:  "bg-blue-100 text-blue-700 border-blue-200",
@@ -330,7 +330,7 @@ export function OrcamentoEditor({ id }: OrcamentoEditorProps) {
         <div className="min-w-[900px]">
         <div className="grid bg-muted/50 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide"
           style={{ gridTemplateColumns: GRID_COLS }}>
-          {["#", "Código", "Base", "Descrição", "Und", "Qtd", "Vlr Unit.", "Vlr c/BDI", "Total", ""].map((h, i) => (
+          {["Item", "Código", "Base", "Descrição", "Und", "Qtd", "Vlr Unit.", "Vlr c/BDI", "Total", ""].map((h, i) => (
             <div key={i} className={cn("px-2 py-2.5", i >= 5 && i <= 8 ? "text-right" : "")}>{h}</div>
           ))}
         </div>
@@ -496,18 +496,29 @@ function OrcamentoItemRow({ item, itemIndex, bdi, onUpdate, onDelete, isUpdating
   item: { id: string; code: string; description: string; unit: string; quantity: unknown; unitPrice: unknown; totalPrice: unknown; source: string | null; sourceCode: string | null; };
   itemIndex: number;
   bdi: number;
-  onUpdate: (data: { quantity?: number; unitPrice?: number }) => void;
+  onUpdate: (data: { code?: string; quantity?: number; unitPrice?: number }) => void;
   onDelete: () => void;
   isUpdating: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [qty, setQty] = useState(String(Number(item.quantity)));
   const [price, setPrice] = useState(String(Number(item.unitPrice)));
+  const [itemVal, setItemVal] = useState(String(itemIndex));
+  const [codeVal, setCodeVal] = useState(item.code);
 
-  const handleBlur = (field: "quantity" | "unitPrice") => {
+  // keep local state in sync if item changes externally
+  useEffect(() => { setItemVal(String(itemIndex)); }, [itemIndex]);
+  useEffect(() => { if (editing !== "code") setCodeVal(item.code); }, [item.code, editing]);
+
+  const handleBlur = (field: "quantity" | "unitPrice" | "item" | "code") => {
     setEditing(null);
-    const value = parseFloat(field === "quantity" ? qty : price);
-    if (!isNaN(value) && value > 0) onUpdate({ [field]: value });
+    if (field === "quantity") {
+      const v = parseFloat(qty); if (!isNaN(v) && v > 0) onUpdate({ quantity: v });
+    } else if (field === "unitPrice") {
+      const v = parseFloat(price); if (!isNaN(v) && v > 0) onUpdate({ unitPrice: v });
+    } else if (field === "code") {
+      if (codeVal.trim() && codeVal.trim() !== item.code) onUpdate({ code: codeVal.trim() });
+    }
   };
 
   const unitPrice = Number(item.unitPrice);
@@ -521,15 +532,37 @@ function OrcamentoItemRow({ item, itemIndex, bdi, onUpdate, onDelete, isUpdating
   return (
     <div className="grid items-center hover:bg-accent/30 transition-colors border-b border-border/50 last:border-0 group min-w-[900px]"
       style={{ gridTemplateColumns: GRID_COLS }}>
-      {/* # */}
-      <div className="px-2 py-1.5 text-center">
-        <span className="text-xs text-muted-foreground font-mono">{itemIndex}</span>
+      {/* Item (sequencial, editável como referência) */}
+      <div className="px-1 py-1">
+        {editing === "item" ? (
+          <input autoFocus value={itemVal}
+            onChange={e => setItemVal(e.target.value)}
+            onBlur={() => { setEditing(null); /* item index is display-only, no save */ }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditing(null); }}
+            className="w-full text-xs font-mono text-center px-1 py-0.5 rounded border border-primary bg-background focus:outline-none" />
+        ) : (
+          <button onClick={() => setEditing("item")}
+            className="w-full text-xs text-muted-foreground font-mono text-center px-1 py-0.5 rounded hover:bg-muted/50 hover:text-foreground transition-colors">
+            {itemVal}
+          </button>
+        )}
       </div>
-      {/* Código */}
-      <div className="px-2 py-1.5">
-        <span className="font-mono text-xs text-muted-foreground leading-tight block truncate">{item.code}</span>
+      {/* Código (editável) */}
+      <div className="px-1 py-1">
+        {editing === "code" ? (
+          <input autoFocus value={codeVal}
+            onChange={e => setCodeVal(e.target.value)}
+            onBlur={() => handleBlur("code")}
+            onKeyDown={e => { if (e.key === "Enter") handleBlur("code"); if (e.key === "Escape") { setCodeVal(item.code); setEditing(null); } }}
+            className="w-full text-xs font-mono px-1 py-0.5 rounded border border-primary bg-background focus:outline-none" />
+        ) : (
+          <button onClick={() => setEditing("code")}
+            className="w-full text-left text-xs font-mono text-muted-foreground px-1 py-0.5 rounded hover:bg-muted/50 hover:text-foreground transition-colors truncate block">
+            {item.code || <span className="opacity-40 italic">—</span>}
+          </button>
+        )}
         {item.sourceCode && item.sourceCode !== item.code && (
-          <span className="text-[10px] text-muted-foreground/50 font-mono">{item.sourceCode}</span>
+          <span className="text-[10px] text-muted-foreground/50 font-mono px-1">{item.sourceCode}</span>
         )}
       </div>
       {/* Base */}

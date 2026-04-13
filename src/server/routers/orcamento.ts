@@ -162,6 +162,7 @@ export const orcamentoRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string(),
+        code: z.string().min(1).optional(),
         description: z.string().optional(),
         unit: z.string().optional(),
         quantity: z.number().positive().optional(),
