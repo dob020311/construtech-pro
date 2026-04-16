@@ -12,6 +12,7 @@ import { planejamentoRouter } from "./planejamento";
 import { comprasRouter } from "./compras";
 import { cdeRouter } from "./cde";
 import { basePrecoRouter } from "./basePreco";
+import { relatoriosRouter } from "./relatorios";
 
 export const appRouter = createTRPCRouter({
   licitacao: licitacaoRouter,
@@ -27,6 +28,7 @@ export const appRouter = createTRPCRouter({
   compras: comprasRouter,
   cde: cdeRouter,
   basePreco: basePrecoRouter,
+  relatorios: relatoriosRouter,
 });
 
 export type AppRouter = typeof appRouter;
